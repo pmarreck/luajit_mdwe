@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# MDWE characterization suite: builds the probe helpers, then asserts the
+# observed W^X strategy matrix and upstream LuaJIT behavior under each
+# enforcement surface. Expectations were recorded from observed runs
+# (docs/MDWE_RESEARCH.md); a change in any cell is a failure to investigate.
+#
+# Usage: tests/mdwe/run [path/to/luajit]   (default: src/luajit)
+# Env: MDWE_SYSTEMD=0 disables the systemd-run --user column.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+bin="$root/.build-work/mdwe"
+luajit="${1:-$root/src/luajit}"
+cc="${CC:-cc}"
+pass=0 fail=0 skip=0
+
+ok() { pass=$((pass+1)); }
+bad() { fail=$((fail+1)); printf '\e[31mFAIL\e[0m %s\n' "$*"; }
+
+mkdir -p "$bin"
+for t in wx_probe mdwe_exec sdmdwe_seccomp_exec flip_bench; do
+	if ! "$cc" -O2 -Wall -Wextra -Werror -o "$bin/${t//_/-}" "$root/tests/mdwe/$t.c" 2>"$bin/$t.log"; then
+		bad "compile $t: $(cat "$bin/$t.log")"
+	fi
+done
+
+systemd_ok=0
+if [ "${MDWE_SYSTEMD:-1}" = 1 ] && command -v systemd-run >/dev/null &&
+	systemd-run --user --quiet --wait --pipe --collect true >/dev/null 2>&1; then
+	systemd_ok=1
+fi
+
+# run_under MODE cmd... ; sets out and rc
+run_under() {
+	local mode="$1"; shift
+	case "$mode" in
+		none) out="$("$@" 2>&1)"; rc=$? ;;
+		kernel) out="$("$bin/mdwe-exec" "$@" 2>&1)"; rc=$? ;;
+		seccomp) out="$("$bin/sdmdwe-seccomp-exec" "$@" 2>&1)"; rc=$? ;;
+		systemd) out="$(systemd-run --user --quiet --wait --pipe --collect \
+			-E LUA_PATH="${LUA_PATH:-}" -p MemoryDenyWriteExecute=yes "$@" 2>&1)"; rc=$? ;;
+	esac
+}
+
+# expect MODE WANT_RC WANT_SUBSTRING cmd...
+expect() {
+	local mode="$1" want_rc="$2" want="$3"; shift 3
+	if [ "$mode" = systemd ] && [ "$systemd_ok" = 0 ]; then skip=$((skip+1)); return; fi
+	run_under "$mode" "$@"
+	if [ "$rc" != "$want_rc" ] || [[ "$out" != *"$want"* ]]; then
+		bad "[$mode] $* => rc=$rc out=$(printf %q "$out") (want rc=$want_rc, '$want')"
+	else
+		ok
+	fi
+}
+
+# systemd's seccomp filter answers EPERM; kernel PR_SET_MDWE answers EACCES.
+# systemd >= v254 uses PR_SET_MDWE when the kernel has it, so its column
+# matches "kernel" on Linux >= 6.3.
+for mode in none kernel seccomp systemd; do
+	case "$mode" in
+		none) deny= ;;
+		seccomp) deny="Operation not permitted" ;;
+		*) deny="Permission denied" ;;
+	esac
+	if [ "$mode" = none ]; then
+		expect $mode 0 "OK 42" "$bin/wx-probe" mprotect
+		expect $mode 0 "OK 42" "$bin/wx-probe" rwx
+		expect $mode 0 "OK 42" "$bin/wx-probe" memfd-mprotect
+		expect $mode 0 "OK 42" "$bin/wx-probe" rx-to-rwx
+	else
+		expect $mode 2 "REFUSED mprotect RX: $deny" "$bin/wx-probe" mprotect
+		expect $mode 2 "REFUSED mmap RWX: $deny" "$bin/wx-probe" rwx
+		expect $mode 2 "REFUSED mprotect RX: $deny" "$bin/wx-probe" memfd-mprotect
+		expect $mode 2 "REFUSED mprotect RWX: $deny" "$bin/wx-probe" rx-to-rwx
+	fi
+	# Strategies that never add PROT_EXEC to a writable mapping pass everywhere.
+	expect $mode 0 "OK 43" "$bin/wx-probe" dual
+	expect $mode 0 "OK 43" "$bin/wx-probe" remap
+	expect $mode 0 "OK 42" "$bin/wx-probe" procmem
+	# Re-asserting PROT_EXEC without exec gain: kernel allows, seccomp does not.
+	if [ "$mode" = seccomp ]; then
+		expect $mode 2 "REFUSED mprotect RX again: $deny" "$bin/wx-probe" rx-noop
+	else
+		expect $mode 0 "OK noop" "$bin/wx-probe" rx-noop
+	fi
+	# memfd code is shared across fork(), unlike anonymous private code.
+	expect $mode 4 "SHARED parent now runs child code" "$bin/wx-probe" fork-dual
+	expect $mode 4 "SHARED parent now runs child code" "$bin/wx-probe" fork-dual-private-rx
+done
+expect none 0 "ISOLATED" "$bin/wx-probe" fork-anon
+
+# memfd_create flags do not gate mmap(PROT_EXEC); MFD_NOEXEC_SEAL governs execve only.
+for m in exec noexec-seal plain; do
+	for mode in kernel seccomp; do
+		WX_MFD=$m expect $mode 0 "OK 43" "$bin/wx-probe" remap
+		WX_MFD=$m expect $mode 0 "OK 43" "$bin/wx-probe" dual
+	done
+done
+# A unit may forbid memfd_create itself; with an errno action the refusal is catchable.
+expect_sd_nomemfd() {
+	[ "$systemd_ok" = 0 ] && { skip=$((skip+1)); return; }
+	out="$(systemd-run --user --quiet --wait --pipe --collect -p MemoryDenyWriteExecute=yes \
+		-p "SystemCallFilter=~memfd_create" -p SystemCallErrorNumber=EPERM "$bin/wx-probe" remap 2>&1)"; rc=$?
+	if [ "$rc" = 2 ] && [[ "$out" == *"REFUSED memfd_create: Operation not permitted"* ]]; then ok; else bad "systemd ~memfd_create => rc=$rc out=$out"; fi
+}
+expect_sd_nomemfd
+
+# Upstream LuaJIT characterization. These cells are expected to change once
+# the reviewed design lands; update them only together with that change.
+if [ -x "$luajit" ]; then
+	export LUA_PATH="$root/src/?.lua;;"
+	lua="$root/tests/mdwe/lua"
+	for mode in none kernel seccomp systemd; do
+		expect $mode 0 "jit=false traces=0 sum=2999998" "$luajit" -joff "$lua/jit_smoke.lua"
+		if [ "$mode" = none ]; then
+			expect $mode 0 "jit=true traces=1 sum=2999998" "$luajit" "$lua/jit_smoke.lua"
+			expect $mode 0 "sorted=12345" "$luajit" -joff "$lua/ffi_callback.lua"
+		else
+			expect $mode 1 "runtime code generation failed, restricted kernel?" "$luajit" "$lua/jit_smoke.lua"
+		fi
+	done
+	# FFI callback trampolines SIGSEGV under MDWE even with -joff (unchecked mprotect).
+	expect kernel 139 "" "$luajit" -joff "$lua/ffi_callback.lua"
+	expect seccomp 139 "" "$luajit" -joff "$lua/ffi_callback.lua"
+else
+	bad "no LuaJIT binary at $luajit (run: make -C src)"
+fi
+
+printf 'mdwe: %d passed, %d failed, %d skipped (systemd column available: %d)\n' "$pass" "$fail" "$skip" "$systemd_ok"
+[ "$fail" -eq 0 ]

@@ -10,3 +10,7 @@
 *.dmp
 *.swp
 .tags
+
+# luajit_mdwe research/build outputs
+/.build-work/
+/inbox/
