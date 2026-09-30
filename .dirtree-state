@@ -2,6 +2,7 @@
 ver=1.2
 annotate=[
 	bench = Per-machine benchmark ledgers (ndjson), source-controlled
+	bin/sizemcode-tune = Times a Lua script at several -Osizemcode sizes with -Omcoderemap=1; reports the fastest (--json, --match)
 	bm = Fork vs pinned-upstream benchmark harness: output check, hyperfine, robust median/MAD ledger
 	build = Build host product via build.zig into zig-out/<triple>/<profile>; publish bin/<os>/<arch>/luajit
 	build-all = Cross-build the 5-target matrix via ./build
@@ -13,6 +14,9 @@ annotate=[
 	flake.nix = Pinned research dev shell (gcc, make, hyperfine, strace, gdb)
 	test = Full suite: static LuaJIT build plus MDWE characterization
 	tests/benchmark/layout-compare = Layout-controlled =1 vs =2 comparison across -falign-functions builds
+	tests/bm/prev-pair = Pairs ./bm's previous fork row with the upstream row of the same run (ratio history gate)
+	tests/bm/prev-pair-test = Synthetic-ledger test for prev-pair (cross-variant mispairing regression)
+	tests/bm/sizemcode-tune-test = Tests bin/sizemcode-tune: JSON shape, remap flag, output-mismatch refusal, --match
 	tests/compile/cross-targets = zig cc compile matrix for macOS (HRT/plain) and Windows mcode/callback allocators, -Werror
 	tests/macos/hrt = macOS hardened-runtime (MAP_JIT) build, sign, JIT/callback/suite checks; runs on a Mac
 	tests/macos/remote = Sync working tree to a Mac over ssh and run native + HRT checks there
@@ -30,7 +34,7 @@ annotate=[
 	tests/mdwe/lua/mdwe_ffi.lua = FFI helpers for fork/seal tests (memfd info, pipes, trace snapshots)
 	tests/mdwe/lua/trace_churn.lua = Deterministic compile-heavy workload counting compiled/aborted traces
 	tests/mdwe/mdwe_exec.c = Launcher applying kernel PR_SET_MDWE before exec
-	tests/mdwe/r_mode = Acceptance T1-T11 for LUAJIT_SECURITY_MCODE=2 across none/kernel/seccomp/systemd
+	tests/mdwe/r_mode = Acceptance tests T1-T11 for the memfd allocator; 'runtime' arg drives a default build with -Omcoderemap=1
 	tests/mdwe/run = MDWE characterization suite across none/kernel/seccomp/systemd surfaces
 	tests/mdwe/sdmdwe_seccomp_exec.c = Launcher replicating systemd's seccomp MemoryDenyWriteExecute fallback filter
 	tests/mdwe/wx_probe.c = W^X strategy probe (mprotect, RWX, memfd dual/remap, procmem, fork isolation)

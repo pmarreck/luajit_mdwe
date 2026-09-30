@@ -59,7 +59,7 @@ void lj_mcode_sync(void *start, void *end)
 #endif
 }
 
-#if LUAJIT_SECURITY_MCODE == 2
+#if LJ_MCODE_REMAP
 #include <errno.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -120,6 +120,10 @@ static LJ_NORET LJ_NOINLINE void mcode_protfail(jit_State *J)
 }
 #endif
 
+#if LJ_MCODE_REMAP
+static void mc_setprot(jit_State *J, void *p, size_t sz, int prot);
+#endif
+
 #if LJ_TARGET_WINDOWS
 
 #define MCPROT_RW	PAGE_READWRITE
@@ -148,9 +152,65 @@ static void mcode_setprot(jit_State *J, void *p, size_t sz, DWORD prot)
 #endif
 }
 
-#elif LJ_TARGET_POSIX && LUAJIT_SECURITY_MCODE == 2
+#elif LJ_TARGET_POSIX
 
-/* RW^X by memfd remapping (LUAJIT_SECURITY_MCODE=2, Linux only).
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS	MAP_ANON
+#endif
+
+#define MCPROT_RW	(PROT_READ|PROT_WRITE)
+#define MCPROT_RX	(PROT_READ|PROT_EXEC)
+#define MCPROT_RWX	(PROT_READ|PROT_WRITE|PROT_EXEC)
+#ifdef PROT_MPROTECT
+#define MCPROT_CREATE	(PROT_MPROTECT(MCPROT_RWX))
+#elif MCMAP_CREATE
+#define MCPROT_CREATE	PROT_EXEC
+#else
+#define MCPROT_CREATE	0
+#endif
+
+static void *mcode_alloc_at(uintptr_t hint, size_t sz, int prot)
+{
+  void *p = mmap((void *)hint, sz, prot|MCPROT_CREATE, MAP_PRIVATE|MAP_ANONYMOUS|MCMAP_CREATE, -1, 0);
+  if (p == MAP_FAILED) return NULL;
+#if MCMAP_CREATE
+  pthread_jit_write_protect_np(0);
+#endif
+  return p;
+}
+
+static void mcode_free(void *p, size_t sz)
+{
+  munmap(p, sz);
+}
+
+static void mcode_setprot(jit_State *J, void *p, size_t sz, int prot)
+{
+#if LUAJIT_SECURITY_MCODE != 0
+#if LJ_MCODE_REMAP
+  if (J->mcremap) { mc_setprot(J, p, sz, prot); return; }
+#endif
+#if MCMAP_CREATE
+  UNUSED(J); UNUSED(p); UNUSED(sz);
+  pthread_jit_write_protect_np((prot & PROT_EXEC));
+#else
+  if (mprotect(p, sz, prot)) mcode_protfail(J);
+#endif
+#else
+  UNUSED(J); UNUSED(p); UNUSED(sz); UNUSED(prot);
+#endif
+}
+
+#else
+
+#error "Missing OS support for explicit placement of executable memory"
+
+#endif
+
+#if LJ_MCODE_REMAP
+
+/* RW^X by memfd remapping (Linux; JIT param mcoderemap, default on for
+** LUAJIT_SECURITY_MCODE=2; latched in J->mcremap while no area exists).
 **
 ** Works under MemoryDenyWriteExecute (kernel PR_SET_MDWE or systemd's seccomp
 ** filter), which refuse mprotect() gaining PROT_EXEC but allow a fresh
@@ -182,8 +242,6 @@ static void mcode_setprot(jit_State *J, void *p, size_t sz, DWORD prot)
 #define FALLOC_FL_PUNCH_HOLE	0x02
 #endif
 
-#define MCPROT_RW	(PROT_READ|PROT_WRITE)
-#define MCPROT_RX	(PROT_READ|PROT_EXEC)
 #define MC_SEALS	(F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_WRITE)
 
 typedef struct MCodeArea {
@@ -346,23 +404,6 @@ static MCodeArea *mc_find(jit_State *J, MCodeCtx *c, void *p, size_t sz)
   return NULL;
 }
 
-/* Placement probe: an anonymous PROT_NONE reservation, neither writable nor
-** executable. The file offset is only assigned once placement is accepted.
-*/
-static void *mcode_alloc_at(uintptr_t hint, size_t sz, int prot)
-{
-  void *p = mmap((void *)hint, sz, PROT_NONE,
-		 MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
-  UNUSED(prot);
-  return p == MAP_FAILED ? NULL : p;
-}
-
-/* Release a rejected reservation. */
-static void mcode_free(void *p, size_t sz)
-{
-  munmap(p, sz);
-}
-
 /* Back an accepted reservation with the memfd, mapped RW. */
 static void mc_area_commit(jit_State *J, MCode *p, size_t sz)
 {
@@ -416,7 +457,7 @@ static void mc_area_free(jit_State *J, MCode *p, size_t sz)
   mc_end(c);
 }
 
-static void mcode_setprot(jit_State *J, void *p, size_t sz, int prot)
+static void mc_setprot(jit_State *J, void *p, size_t sz, int prot)
 {
   MCodeCtx *c = J->mcctx;
   MCodeArea *a = mc_find(J, c, p, sz);
@@ -451,56 +492,6 @@ void lj_mcode_freestate(jit_State *J)
   lj_mem_free(J2G(J), c, sizeof(MCodeCtx));
   J->mcctx = NULL;
 }
-
-#elif LJ_TARGET_POSIX
-
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS	MAP_ANON
-#endif
-
-#define MCPROT_RW	(PROT_READ|PROT_WRITE)
-#define MCPROT_RX	(PROT_READ|PROT_EXEC)
-#define MCPROT_RWX	(PROT_READ|PROT_WRITE|PROT_EXEC)
-#ifdef PROT_MPROTECT
-#define MCPROT_CREATE	(PROT_MPROTECT(MCPROT_RWX))
-#elif MCMAP_CREATE
-#define MCPROT_CREATE	PROT_EXEC
-#else
-#define MCPROT_CREATE	0
-#endif
-
-static void *mcode_alloc_at(uintptr_t hint, size_t sz, int prot)
-{
-  void *p = mmap((void *)hint, sz, prot|MCPROT_CREATE, MAP_PRIVATE|MAP_ANONYMOUS|MCMAP_CREATE, -1, 0);
-  if (p == MAP_FAILED) return NULL;
-#if MCMAP_CREATE
-  pthread_jit_write_protect_np(0);
-#endif
-  return p;
-}
-
-static void mcode_free(void *p, size_t sz)
-{
-  munmap(p, sz);
-}
-
-static void mcode_setprot(jit_State *J, void *p, size_t sz, int prot)
-{
-#if LUAJIT_SECURITY_MCODE != 0
-#if MCMAP_CREATE
-  UNUSED(J); UNUSED(p); UNUSED(sz);
-  pthread_jit_write_protect_np((prot & PROT_EXEC));
-#else
-  if (mprotect(p, sz, prot)) mcode_protfail(J);
-#endif
-#else
-  UNUSED(J); UNUSED(p); UNUSED(sz); UNUSED(prot);
-#endif
-}
-
-#else
-
-#error "Missing OS support for explicit placement of executable memory"
 
 #endif
 
@@ -695,9 +686,14 @@ static void mcode_allocarea(jit_State *J)
 {
   MCode *oldarea = J->mcarea;
   size_t sz = (size_t)J->param[JIT_P_sizemcode] << 10;
+#if LJ_MCODE_REMAP
+  if (!oldarea)  /* Mode can only change while no area exists. */
+    J->mcremap = J->param[JIT_P_mcoderemap] != 0;
+#endif
   J->mcarea = (MCode *)mcode_alloc(J, sz);
-#if LJ_TARGET_POSIX && LUAJIT_SECURITY_MCODE == 2
-  mc_area_commit(J, J->mcarea, sz);  /* Placement accepted: back it, RW. */
+#if LJ_MCODE_REMAP
+  if (J->mcremap)
+    mc_area_commit(J, J->mcarea, sz);  /* Placement accepted: back it, RW. */
 #endif
   J->szmcarea = sz;
   J->mcprot = MCPROT_GEN;
@@ -719,11 +715,10 @@ void lj_mcode_free(jit_State *J)
     MCode *next = ((MCLink *)mc)->next;
     size_t sz = ((MCLink *)mc)->size;
     lj_err_deregister_mcode(mc, sz, (uint8_t *)mc + sizeof(MCLink));
-#if LJ_TARGET_POSIX && LUAJIT_SECURITY_MCODE == 2
-    mc_area_free(J, mc, sz);
-#else
-    mcode_free(mc, sz);
+#if LJ_MCODE_REMAP
+    if (J->mcremap) mc_area_free(J, mc, sz); else
 #endif
+    mcode_free(mc, sz);
     mc = next;
   }
 }

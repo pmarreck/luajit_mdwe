@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# The ratio history gate must pair the previous fork row with the upstream row
+# from the SAME run (same ts), not with the newest upstream row overall, which
+# may belong to another variant's run (bug seen 2026-09-30: series -31.5%).
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+ledger="$(mktemp "${TMPDIR:-/tmp}/prev-pair.XXXXXX")"
+cat >"$ledger" <<'L'
+{"ts":"t1","bench":"series","variant":"fork","median_s":0.23}
+{"ts":"t1","bench":"series","variant":"upstream","median_s":0.235}
+{"ts":"t2","bench":"series","variant":"fork-mcode2","median_s":0.157}
+{"ts":"t2","bench":"series","variant":"upstream","median_s":0.1570}
+{"ts":"t3","bench":"life","variant":"fork","median_s":1}
+{"ts":"t3","bench":"life","variant":"upstream","median_s":2}
+L
+fails=0
+check() { # label want got
+	if [ "$2" = "$3" ]; then echo "ok $1"; else echo "FAIL $1: want '$2' got '$3'"; fails=$((fails+1)); fi
+}
+got() { "$root/tests/bm/prev-pair" "$ledger" "$@" | jq -rc '[.[] | .ts + ":" + .variant] | join(" ")'; }
+check "fork pairs with its own run" "t1:fork t1:upstream" "$(got series fork)"
+check "fork-mcode2 pairs with its own run" "t2:fork-mcode2 t2:upstream" "$(got series fork-mcode2)"
+check "other bench unaffected" "t3:fork t3:upstream" "$(got life fork)"
+check "no history gives empty" "" "$("$root/tests/bm/prev-pair" "$ledger" series fork-x)"
+mv "$ledger" ~/.Trash/ 2>/dev/null
+echo "prev-pair: $((4-fails)) passed, $fails failed"
+exit $fails

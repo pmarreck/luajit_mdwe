@@ -4,7 +4,9 @@ Status: **revision 2, accepted by Peter on 2026-09-30 and implemented as
 `LUAJIT_SECURITY_MCODE=2` (commit `8b7d18ee`); acceptance tests T1-T11 pass
 (`tests/mdwe/r_mode`).** Revision 2 resolved the independent Grok review of
 revision 1 (`cefa181e`, "accept with required changes"); see §10. Measured
-costs of the implementation are in §7 and `MDWE_RESEARCH.md` §5.1.
+costs of the implementation are in §7 and `MDWE_RESEARCH.md` §5.1. Revision 3
+(2026-09-30, at Peter's request) makes the mode selectable at runtime in any
+Linux build with the JIT parameter `mcoderemap` (§5.1).
 Evidence and sources: [`MDWE_RESEARCH.md`](MDWE_RESEARCH.md). Purpose: [`../INTENT.md`](../INTENT.md).
 
 Baseline: LuaJIT v2.1 @ `c6ffc141` (2026-09-08). Measurements: Linux 6.18.54
@@ -116,14 +118,28 @@ library fork.
 - New value `LUAJIT_SECURITY_MCODE=2` ("RW^X by remapping"), recorded in the
   existing 2-bit `mcode` field of `LJ_SECURITY_MODE`, visible as
   `jit.security("mcode")` (`lib_jit.c`, added in `2e68e1fc`). Values 0 and 1
-  remain byte-for-byte upstream behavior; `=1` stays the default.
+  keep upstream behavior; `=1` stays the default.
+- Runtime opt-in (revision 3): on Linux with `LUAJIT_SECURITY_MCODE != 0`,
+  every build carries the remap backend behind the JIT parameter
+  `mcoderemap` (`luajit -Omcoderemap=1`, `jit.opt.start("mcoderemap=1")`).
+  Its default is 1 only in `=2` builds. The value is latched into
+  `J->mcremap` when an area is allocated while none exists (first compile,
+  or after `jit.flush()`), so one area chain never mixes backends; changing
+  it later takes effect at the next flush. The FFI callback page reads the
+  parameter when it is created. With the parameter at 0 the only additions to
+  upstream's path are one branch in `mcode_setprot`, `mcode_allocarea` and
+  `lj_mcode_free`; the remap backend no longer uses a `PROT_NONE`
+  reservation, since `MAP_FIXED` over upstream's anonymous RW placement is
+  equally allowed under MDWE. `jit.security("mcode")` reports the build
+  value, so tests pass the expected mode in (`LJ_EXPECT_REMAP`).
 - `=2` is compiled only for `LJ_TARGET_LINUX`. Other targets reject it with
   `#error` rather than silently falling back. Linux targets other than
   x86_64 build but are not claimed as supported until executed (§9).
 - **No runtime auto-selection**, including when `PR_GET_MDWE` reports MDWE.
   A prctl check would miss the seccomp surface, would contradict T6 (`=1`
   must still fail as upstream does), and is the kind of upfront check Mike
-  Pall rejected in 2013 (§5.6). Selection is a build decision.
+  Pall rejected in 2013 (§5.6). Selection is explicit: the build default or
+  the parameter.
 
 ### 5.2 Backing store and file-offset allocation
 
@@ -373,6 +389,15 @@ slower (`MAP_POPULATE` +10 ms; range-limited remapping +15 ms on a 68 ms
 baseline) and were not adopted. The cost scales with `sizemcode`: +20% at
 16 KB, +31% at 64 KB (default), +48% at 256 KB; lowering the default for `=2`
 is a tuning decision left open (larger traces could exceed smaller areas).
+
+The runtime parameter on a default build costs the same: with
+`-Omcoderemap=1`, 19 steady-state benchmarks show no change beyond noise
+versus upstream and `trace_churn` is +45.1% (3σ = 20.1%); without it, the
+default build matches upstream on all 20 (2026-09-30, `./bm`). Tuning knob:
+`-Osizemcode=16` (or `jit.opt.start("sizemcode=16")`) reduces the
+compile-bound cost for workloads whose traces fit 16 KB areas; the default is
+unchanged. `bin/sizemcode-tune` measures candidate sizes on a given
+script.
 
 ## 8. Acceptance tests (written first and failing, before implementation)
 

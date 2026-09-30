@@ -134,8 +134,10 @@ for c in "${cases[@]}"; do
 	# History gate on the fork/upstream RATIO: the unchanged upstream control
 	# cancels machine drift between runs (load, frequency), which raw per-variant
 	# history cannot. Raw history is still printed, informationally.
-	pf="$(grep "\"bench\":\"$name\",\"variant\":\"${BM_FORK_LABEL:-fork}\"" "$ledger" 2>/dev/null | tail -1)"
-	pu="$(grep "\"bench\":\"$name\",\"variant\":\"upstream\"" "$ledger" 2>/dev/null | tail -1)"
+	# Previous fork row and the upstream row from that same run (tests/bm/prev-pair).
+	pair="$("$root/tests/bm/prev-pair" "$ledger" "$name" "${BM_FORK_LABEL:-fork}")"
+	pf="$(jq -c ".[0] // empty" <<<"${pair:-null}")"
+	pu="$(jq -c ".[1] // empty" <<<"${pair:-null}")"
 	if [ -n "$pf" ] && [ -n "$pu" ]; then
 		read -r r0 s0 r1 s1 < <(awk -v f0="$(jq -r .median_s <<<"$pf")" -v sf0="$(jq -r '.mad_sigma_s // .stddev_s' <<<"$pf")" \
 			-v u0="$(jq -r .median_s <<<"$pu")" -v su0="$(jq -r '.mad_sigma_s // .stddev_s' <<<"$pu")" \

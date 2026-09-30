@@ -37,6 +37,20 @@ static char mapsbuf[1 << 20];
 static struct { unsigned long lo, hi; } reg[MAXREG];
 
 /* Each call compiles a fresh function (new root trace) in state L. */
+/* Apply LJ_EMBED_JITOPT (e.g. "mcoderemap=1") via jit.opt.start, as an
+** embedding host would. */
+static void jitopt(lua_State *L)
+{
+	const char *o = getenv("LJ_EMBED_JITOPT");
+	if (!o) return;
+	lua_getglobal(L, "jit");
+	lua_getfield(L, -1, "opt");
+	lua_getfield(L, -1, "start");
+	lua_pushstring(L, o);
+	if (lua_pcall(L, 1, 0, 0)) { fprintf(stderr, "jit.opt.start: %s\n", lua_tostring(L, -1)); exit(3); }
+	lua_pop(L, 2);
+}
+
 static const char *churn =
 	"local k = ... "
 	"local f = load(('return function(n) local s = 0 for i = 1, n do s = s + (i %% %d) * %d end return s end'):format(k % 97 + 2, k))() "
@@ -48,6 +62,7 @@ static void *compiler(void *arg)
 	long k = 0;
 	(void)arg;
 	luaL_openlibs(L);
+	jitopt(L);
 	if (luaL_loadstring(L, churn)) { fprintf(stderr, "load: %s\n", lua_tostring(L, -1)); exit(3); }
 	lua_setglobal(L, "churn");
 	while (!atomic_load(&stop)) {

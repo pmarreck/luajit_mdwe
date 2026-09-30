@@ -104,6 +104,14 @@
 
 /* -- JIT engine parameters ----------------------------------------------- */
 
+#if LJ_MCODE_REMAP
+/* 1 = map machine code from a memfd, switching views instead of mprotect()
+** (works under MemoryDenyWriteExecute). Latched while no mcode area exists. */
+#define JIT_PARAMDEF_REMAP(_) _(\012, mcoderemap, LUAJIT_SECURITY_MCODE == 2)
+#else
+#define JIT_PARAMDEF_REMAP(_)
+#endif
+
 /* Optimization parameters and their defaults. Length is a char in octal! */
 #define JIT_PARAMDEF(_) \
   _(\010, maxtrace,	1000)	/* Max. # of traces in cache. */ \
@@ -126,6 +134,7 @@
   _(\011, sizemcode,	64) \
   /* Max. total size of all machine code areas (in KBytes). */ \
   _(\010, maxmcode,	2048) \
+  JIT_PARAMDEF_REMAP(_) \
   /* End of list. */
 
 enum {
@@ -509,8 +518,9 @@ typedef struct jit_State {
   size_t szmcarea;	/* Size of current mcode area. */
   size_t szallmcarea;	/* Total size of all allocated mcode areas. */
   uintptr_t mcmin, mcmax;	/* Mcode allocation range. */
-#if LUAJIT_SECURITY_MCODE == 2
+#if LJ_MCODE_REMAP
   struct MCodeCtx *mcctx;	/* memfd-backed mcode state (lj_mcode.c). */
+  int mcremap;		/* Areas use memfd remapping (latched from param). */
 #endif
 
   TValue errinfo;	/* Additional info element for trace errors. */

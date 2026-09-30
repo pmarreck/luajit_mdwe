@@ -1,3 +1,39 @@
+About this fork: LuaJIT under MemoryDenyWriteExecute
+----------------------------------------------------
+
+This is a fork of LuaJIT v2.1 whose JIT compiler keeps working when Linux
+refuses to make writable memory executable: the kernel's PR_SET_MDWE and
+systemd's MemoryDenyWriteExecute=yes. Upstream LuaJIT panics there with
+"runtime code generation failed, restricted kernel?" as soon as it compiles
+a trace, and its FFI callbacks crash even with -joff.
+
+The fork backs machine code with a sealed memfd and switches each code area
+between a shared read-write view and a private read-execute view with
+mmap(MAP_FIXED). No mapping is ever writable and executable, and no mprotect()
+call adds PROT_EXEC, so the W^X guarantee is preserved, not bypassed. fork()
+is handled by write-sealing the file and moving each process to a new one
+before its next write.
+
+Enable it at runtime (Linux, any build of this fork; default off):
+
+ luajit -Omcoderemap=1 app.lua
+ jit.opt.start("mcoderemap=1")   -- from Lua or an embedding host
+
+Set it before the first trace is compiled, or call jit.flush() afterwards.
+Building with -DLUAJIT_SECURITY_MCODE=2 (./build --mcode 2) makes it the
+default. Without the switch the fork behaves like upstream.
+
+Cost, measured against upstream on x86_64 Linux: no measurable change on 19
+steady-state benchmarks; about +30-45% on a compile-heavy stress test, since
+each protection switch is a remap. Smaller code areas lower that cost
+(-Osizemcode=16 measured +20%, versus +31% at the default 64 KB), but an
+area too small for a large trace aborts that trace. bin/sizemcode-tune times
+your own script at several sizes and reports the fastest.
+
+Build and test: nix develop -c ./build and ./test (Zig build plus upstream's
+Makefile). Design, evidence and measurements: docs/MDWE_SPEC.md,
+docs/MDWE_RESEARCH.md; fixes also proposed upstream: docs/UPSTREAM_CANDIDATES.md.
+
 README for LuaJIT 2.1
 ---------------------
 

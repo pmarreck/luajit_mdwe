@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Time a Lua script at several JIT machine-code area sizes (-Osizemcode=N, in
+# KB) with the memfd allocator on (-Omcoderemap=1), and report the fastest.
+# Each remap costs a few microseconds per protection switch, so compile-heavy
+# workloads may prefer smaller areas; see docs/MDWE_SPEC.md §7.
+#
+# Usage: bin/sizemcode-tune [--json] [--runs N] [--sizes "8 16 32 64 128"]
+#                            [--match REGEX] SCRIPT [ARGS...]
+# --match compares only the output matching REGEX (grep -oE), for scripts
+# that print size-dependent details such as trace counts.
+# Env: LUAJIT (default: this checkout's host build, else luajit on PATH).
+# Requires hyperfine and jq (nix develop). Exit 2 if the script's output
+# differs between sizes, since the timings would then not be comparable.
+set -u
+json=0 runs=10 sizes="8 16 32 64 128" match=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--json) json=1; shift ;;
+		--runs) runs="$2"; shift 2 ;;
+		--sizes) sizes="$2"; shift 2 ;;
+		--match) match="$2"; shift 2 ;;
+		-h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+		--) shift; break ;;
+		-*) echo "sizemcode-tune: unknown option $1" >&2; exit 2 ;;
+		*) break ;;
+	esac
+done
+[ $# -ge 1 ] || { echo "usage: sizemcode-tune [--json] [--runs N] [--sizes LIST] SCRIPT [ARGS...]" >&2; exit 2; }
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"; [ "$os" = darwin ] && os=macos
+arch="$(uname -m)"; [ "$arch" = arm64 ] && arch=aarch64
+luajit="${LUAJIT:-$root/bin/$os/$arch/luajit}"
+[ -x "$luajit" ] || luajit="$(command -v luajit)" || { echo "sizemcode-tune: no luajit found" >&2; exit 2; }
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/sizemcode-tune.XXXXXX")"
+trap 'mv "$work" ~/.Trash/ 2>/dev/null' EXIT
+ref="" cmds=()
+for s in $sizes; do
+	flags=(-Omcoderemap=1 "-Osizemcode=$s")
+	if [ -n "$match" ]; then
+		sum="$("$luajit" "${flags[@]}" "$@" 2>&1 | grep -oE -- "$match" | sha256sum)"
+	else
+		sum="$("$luajit" "${flags[@]}" "$@" 2>&1 | sha256sum)"
+	fi
+	if [ -z "$ref" ]; then ref="$sum"
+	elif [ "$sum" != "$ref" ]; then
+		echo "sizemcode-tune: output differs at sizemcode=$s; timings would not be comparable" >&2; exit 2
+	fi
+	cmds+=("$(printf '%q ' "$luajit" "${flags[@]}" "$@")")
+done
+hyperfine --shell=bash --style none --warmup 1 --runs "$runs" --output=null \
+	--export-json "$work/h.json" "${cmds[@]}" >/dev/null 2>"$work/err" || { cat "$work/err" >&2; exit 1; }
+
+res="$(jq -c --arg sizes "$sizes" --arg lj "$luajit" --arg script "$1" '
+	($sizes | split(" ") | map(select(. != "") | tonumber)) as $s
+	| [.results | to_entries[] | {sizemcode: $s[.key], median_s: .value.median, runs: (.value.times | length)}] as $r
+	| {luajit: $lj, script: $script, flags: ["-Omcoderemap=1", "-Osizemcode=N"], results: $r,
+	   best: ($r | min_by(.median_s) | .sizemcode)}' "$work/h.json")"
+if [ "$json" = 1 ]; then echo "$res"; exit 0; fi
+printf '%-10s %10s  %8s\n' sizemcode median "vs best"
+jq -r '(.results | min_by(.median_s).median_s) as $m
+	| .results[] | [.sizemcode, .median_s * 1000, (.median_s / $m - 1) * 100] | @tsv' <<<"$res" |
+	while IFS=$'\t' read -r s ms pct; do printf '%-10s %7.2f ms  %+7.1f%%\n' "$s" "$ms" "$pct"; done
+echo "best: -Osizemcode=$(jq -r .best <<<"$res")"

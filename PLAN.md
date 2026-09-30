@@ -18,9 +18,13 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [ ] Decide with Peter: `=2` default `sizemcode` (16 KB cuts compile overhead to +20%) and whether compile-heavy startup matters for Dune.
 - [ ] Deliver to Dune/Einstein: how to build and use `=2` under MemoryDenyWriteExecute; FFI callbacks work in `=2`.
 - [ ] arm64 hardware run of `=2` (qemu-user covers functional behavior only).
-- [ ] Document `-Osizemcode=16` as the =2 tuning knob (no default change) (Peter, 2026-09-30).
-- [ ] Optional sizemcode autotune for a given workload, as an external script, no core code (Peter, 2026-09-30).
-- [ ] Make the memfd mode runtime-selectable in one build, opt-in, minimal code (Peter, 2026-09-30).
+- [x] Documented `-Osizemcode=16` tuning knob in README and spec §7 (no default change). (2026-09-30 16:35 EDT)
+- [x] `bin/sizemcode-tune` autotune script (trace_churn: 8 KB fastest, 64 KB +21%). (2026-09-30 16:35 EDT)
+- [x] Fixed ./bm ratio gate pairing the previous fork row with another variant's upstream row (tests/bm/prev-pair). (2026-09-30 16:20 EDT)
+- [x] Runtime switch: JIT param `mcoderemap` (`-Omcoderemap=1`, `jit.opt.start`) on every Linux build; default 1 only for =2; latched per empty area chain; callback page follows it. r_mode runtime 56/56, =2 56/56, arm64 qemu, no-JIT FFI build ok; bm: default build = upstream on 20/20, flag: steady-state same, trace_churn +45%. (2026-09-30 16:35 EDT)
+- [ ] README section and GitHub repo description stating the fork's purpose (MDWE-compatible JIT via memfd remapping, runtime opt-in) (Peter, 2026-09-30).
+- [ ] After the runtime switch is green and pushed, notify dune_awakening_server (llmsend) so it can add this fork to its flake (Peter, 2026-09-30).
+- [ ] Hold M4 Max VM work until Peter says the Hyperspace dedup run is finished (disk at 97%) (Peter, 2026-09-30).
 - [ ] Use the M4 Max MacBook Pro (tailscale, nix) as a remote dev/test machine: native macOS runs (incl. hardened-runtime JIT), and arm64 Linux via its builder VM if present (Peter, 2026-09-30).
 - [x] macOS on the M4 Max: native suite 505/508; HRT build fails upstream (candidate 2) and callbacks SIGBUS (candidate 3, fixed, tests/macos). (2026-09-30 15:55 EDT)
 - [x] Pin upstream LuaJIT and LuaJIT-test-cleanup as flake inputs; add `./bm` (fork vs upstream, median/MAD noise gate, memory-capped). (2026-09-29 21:35 EDT)

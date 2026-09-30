@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Usage: prev-pair LEDGER BENCH VARIANT
+# Prints [fork_row, upstream_row] as JSON: the newest VARIANT row for BENCH and
+# the upstream row from that same run (same ts), or nothing if either is
+# missing. Used by ./bm's fork/upstream ratio history gate.
+jq -sc --arg b "$2" --arg v "$3" '
+	[.[] | select(.bench == $b)] as $r
+	| ([$r[] | select(.variant == $v)] | last) as $f
+	| if $f == null then empty else
+		([$r[] | select(.variant == "upstream" and .ts == $f.ts)] | last) as $u
+		| if $u == null then empty else [$f, $u] end
+	end' "$1" 2>/dev/null

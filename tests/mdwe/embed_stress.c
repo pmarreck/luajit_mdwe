@@ -14,6 +14,20 @@
 
 #define ROUNDS 200
 
+/* Apply LJ_EMBED_JITOPT (e.g. "mcoderemap=1") via jit.opt.start, as an
+** embedding host would. */
+static void jitopt(lua_State *L)
+{
+	const char *o = getenv("LJ_EMBED_JITOPT");
+	if (!o) return;
+	lua_getglobal(L, "jit");
+	lua_getfield(L, -1, "opt");
+	lua_getfield(L, -1, "start");
+	lua_pushstring(L, o);
+	if (lua_pcall(L, 1, 0, 0)) { fprintf(stderr, "jit.opt.start: %s\n", lua_tostring(L, -1)); exit(3); }
+	lua_pop(L, 2);
+}
+
 static const char *prog =
 	"local k = ... "
 	"local f = load(('return function(n) local s = 0 for i = 1, n do if i %% %d == 0 then s = s + i else s = s - 1 end end return s end'):format(k % 13 + 2))() "
@@ -36,6 +50,7 @@ static void *worker(void *arg)
 	int k;
 	(void)arg;
 	luaL_openlibs(L); luaL_openlibs(R);
+	jitopt(L);
 	luaJIT_setmode(R, 0, LUAJIT_MODE_ENGINE|LUAJIT_MODE_OFF);
 	if (luaL_loadstring(L, prog) || luaL_loadstring(R, prog)) return (void *)1;
 	lua_setglobal(L, "prog"); lua_setglobal(R, "prog");

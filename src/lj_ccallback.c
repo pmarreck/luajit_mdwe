@@ -278,7 +278,7 @@ static void *callback_mcode_init(global_State *g, uint32_t *page)
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS   MAP_ANON
 #endif
-#if LUAJIT_SECURITY_MCODE == 2
+#if LJ_MCODE_REMAP
 #include <fcntl.h>
 #include <unistd.h>
 #ifndef F_ADD_SEALS
@@ -310,24 +310,15 @@ static void *callback_mcode_init(global_State *g, uint32_t *page)
 
 #endif
 
-/* Allocate and initialize area for callback function pointers. */
-static void callback_mcode_new(CTState *cts)
+#if LJ_MCODE_REMAP
+/* Callback page from its own memfd (JIT param mcoderemap): write it once, map
+** it RX private, write-seal and close the file. Nothing can write the page
+** afterwards, so it needs no fork handling. Works under MemoryDenyWriteExecute.
+*/
+static void callback_mcode_remap(CTState *cts, size_t sz)
 {
-  size_t sz = (size_t)CALLBACK_MCODE_SIZE;
-  void *p, *pe;
-#if LJ_TARGET_POSIX && LUAJIT_SECURITY_MCODE == 2
-  int fd;
-#endif
-  if (CALLBACK_MAX_SLOT == 0)
-    lj_err_caller(cts->L, LJ_ERR_FFI_CBACKOV);
-#if LJ_TARGET_WINDOWS
-  p = LJ_WIN_VALLOC(NULL, sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-  if (!p)
-    lj_err_caller(cts->L, LJ_ERR_FFI_CBACKOV);
-#elif LJ_TARGET_POSIX && LUAJIT_SECURITY_MCODE == 2
-  /* Own memfd: write once, re-map RX private, write-seal, close. Nothing can
-  ** write the page afterwards, so it needs no fork handling. */
-  fd = lj_mcode_memfd();
+  void *p;
+  int fd = lj_mcode_memfd();
   if (fd < 0)
     lj_err_caller(cts->L, LJ_ERR_FFI_CBACKPROT);
   if (ftruncate(fd, (off_t)sz) ||
@@ -335,7 +326,37 @@ static void callback_mcode_new(CTState *cts)
     close(fd);
     lj_err_caller(cts->L, LJ_ERR_FFI_CBACKPROT);
   }
+  callback_mcode_init(cts->g, p);
+  lj_mcode_sync(p, (char *)p + sz);
+  if (mmap(p, sz, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED, fd, 0) != p ||
+      fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_WRITE)) {
+    munmap(p, sz);
+    close(fd);
+    lj_err_caller(cts->L, LJ_ERR_FFI_CBACKPROT);
+  }
+  close(fd);
+  cts->cb.mcode = p;
+}
+#endif
+
+/* Allocate and initialize area for callback function pointers. */
+static void callback_mcode_new(CTState *cts)
+{
+  size_t sz = (size_t)CALLBACK_MCODE_SIZE;
+  void *p, *pe;
+  if (CALLBACK_MAX_SLOT == 0)
+    lj_err_caller(cts->L, LJ_ERR_FFI_CBACKOV);
+#if LJ_TARGET_WINDOWS
+  p = LJ_WIN_VALLOC(NULL, sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+  if (!p)
+    lj_err_caller(cts->L, LJ_ERR_FFI_CBACKOV);
 #elif LJ_TARGET_POSIX
+#if LJ_MCODE_REMAP
+  if (G2J(cts->g)->param[JIT_P_mcoderemap]) {
+    callback_mcode_remap(cts, sz);
+    return;
+  }
+#endif
   p = mmap(NULL, sz, PROT_READ|PROT_WRITE|CCPROT_CREATE,
 	   MAP_PRIVATE|MAP_ANONYMOUS|CCMAP_CREATE, -1, 0);
   if (p == MAP_FAILED)
@@ -361,14 +382,6 @@ static void callback_mcode_new(CTState *cts)
       goto protfail;
     }
   }
-#elif LJ_TARGET_POSIX && LUAJIT_SECURITY_MCODE == 2
-  if (mmap(p, sz, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED, fd, 0) != p ||
-      fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_WRITE)) {
-    munmap(p, sz);
-    close(fd);
-    goto protfail;
-  }
-  close(fd);
 #elif LJ_TARGET_POSIX
 #if CCMAP_CREATE
   pthread_jit_write_protect_np(1);
@@ -380,7 +393,7 @@ static void callback_mcode_new(CTState *cts)
 #endif
 #endif
   return;
-#if LJ_TARGET_WINDOWS || (LJ_TARGET_POSIX && (!CCMAP_CREATE || LUAJIT_SECURITY_MCODE == 2))
+#if LJ_TARGET_WINDOWS || (LJ_TARGET_POSIX && !CCMAP_CREATE)
 protfail:
   /* The page would not be executable, e.g. under W^X enforcement. Fail the
   ** callback creation instead of handing out a trampoline that faults. */

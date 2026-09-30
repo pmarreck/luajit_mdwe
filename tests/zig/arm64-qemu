@@ -22,6 +22,13 @@ want="$(LUA_PATH="$root/src/?.lua;;" "$root/src/luajit" "$root/tests/mdwe/lua/tr
 got="$(LUA_PATH="$prefix/share/luajit-2.1/?.lua;;" "$wrap" "$root/tests/mdwe/lua/trace_churn.lua" | grep -o 'checksum=.*')"
 if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "arm64-qemu: trace_churn $got matches host"; else echo "arm64-qemu: FAIL trace_churn '$got' != host '$want'"; fails=$((fails+1)); fi
 
+# Runtime opt-in on the default arm64 build (-Omcoderemap=1).
+for c in "jit_smoke:jit=true traces=1 sum=2999998" "trace_churn:$want" "cross_area:checksum=41705695" "maps_audit:writable=0"; do
+	s="${c%%:*}" w="${c#*:}"
+	out="$(LUA_PATH="$prefix/share/luajit-2.1/?.lua;;" "$wrap" -Omcoderemap=1 "$root/tests/mdwe/lua/$s.lua" 2>&1)"
+	if [ $? = 0 ] && [[ "$out" == *"$w"* ]]; then echo "arm64-qemu: mcoderemap=1 $s ok"; else echo "arm64-qemu: FAIL mcoderemap=1 $s: $out"; fails=$((fails+1)); fi
+done
+
 # LUAJIT_SECURITY_MCODE=2 on arm64 (qemu-user: functional only, no MDWE).
 # FFI-based fork/callback scripts need a dynamic libc; static builds lack
 # ffi.C symbols, so they are covered on x86_64 by tests/mdwe/r_mode.

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# bin/sizemcode-tune: times a script at several sizemcode values (memfd mode),
+# requires identical output across sizes, reports the fastest as JSON.
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+luajit="${1:?usage: sizemcode-tune-test LUAJIT}"
+tool="$root/bin/sizemcode-tune"
+lua="$root/tests/mdwe/lua"
+fails=0 n=0
+check() { n=$((n+1)); if [ "$2" = "$3" ]; then :; else echo "FAIL $1: want '$2' got '$3'"; fails=$((fails+1)); fi; }
+
+out="$(LUAJIT="$luajit" "$tool" --json --runs 2 --sizes "16 64" "$lua/jit_smoke.lua" 2>"$TMPDIR/smt.err")"; rc=$?
+check "rc" 0 "$rc"
+check "sizes measured" "16 64" "$(jq -r '[.results[].sizemcode] | join(" ")' <<<"$out" 2>/dev/null)"
+check "best is a measured size" true "$(jq -r '.best as $b | [.results[].sizemcode] | index($b) != null' <<<"$out" 2>/dev/null)"
+check "remap mode used" true "$(jq -r '.flags | index("-Omcoderemap=1") != null' <<<"$out" 2>/dev/null)"
+check "stderr quiet" "" "$(cat "$TMPDIR/smt.err")"
+
+# Negative control: output that differs between runs must be refused.
+printf 'print(os.clock(), math.random())\nmath.randomseed(os.time()+os.clock()*1e9)\nprint(math.random())\n' >"$TMPDIR/smt-varying.lua"
+out="$(LUAJIT="$luajit" "$tool" --json --runs 2 --sizes "16 64" "$TMPDIR/smt-varying.lua" 2>"$TMPDIR/smt.err")"; rc=$?
+check "varying output refused rc" 2 "$rc"
+check "varying output message" 1 "$(grep -c "output differs" "$TMPDIR/smt.err")"
+
+# --match compares only the result lines; per-size trace counts may differ.
+out="$(LUA_PATH="$lua/?.lua;;" LUAJIT="$luajit" "$tool" --json --runs 2 --sizes "8 64" --match "checksum=[0-9.]+" "$lua/trace_churn.lua" 50 2>"$TMPDIR/smt.err")"; rc=$?
+check "match rc" 0 "$rc"
+check "match sizes" "8 64" "$(jq -r '[.results[].sizemcode] | join(" ")' <<<"$out" 2>/dev/null)"
+
+mv "$TMPDIR/smt.err" "$TMPDIR/smt-varying.lua" ~/.Trash/ 2>/dev/null
+echo "sizemcode-tune: $((n-fails)) passed, $fails failed"
+exit $fails
