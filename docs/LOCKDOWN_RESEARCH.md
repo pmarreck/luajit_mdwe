@@ -156,9 +156,10 @@ Structural limits, independent of the bugs above [INF]:
 
 - Seccomp filters survive `fork` and `execve`. A filter keyed to one fd number
   applies to every descendant, where that number means something else, so
-  a dynamically linked child breaks (measured, §5 above). A process that spawns helpers
-  (Dune's bridge runs `bash`, then `rabbitmqctl`, then BEAMJIT) must spawn
-  them before lockdown or through a helper started before it.
+  a dynamically linked child breaks (measured, §5 above). A process that
+  spawns helpers (Dune's bridge runs `bash`, then `rabbitmqctl`, then
+  BEAMJIT) must spawn them before lockdown or through a helper started
+  before it.
 - After lockdown, `dlopen` (so `ffi.load`) cannot map new libraries.
 - After `fork`, this fork's allocator moves each process to a new memfd
   before its next code write (`MDWE_SPEC.md` §5.5). Under a `memfd_create`

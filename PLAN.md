@@ -2,6 +2,10 @@
 
 Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 
+## Code review
+
+- [ ] Read AGENTS.md, audit the fork across all deep-code-review dimensions, verify findings and write CODE_REVIEW.md with separate upstream and fork attribution.
+
 ## Research and design
 
 - [x] Reproduce JIT-on failure plus interpreted control under systemd MDWE, kernel PR_SET_MDWE and a systemd seccomp-filter replica (`tests/mdwe/run`). (2026-09-29 20:10 EDT)
