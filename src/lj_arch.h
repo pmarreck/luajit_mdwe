@@ -761,8 +761,12 @@ extern void *LJ_WIN_LOADLIBA(const char *path);
 #endif
 
 #ifndef LUAJIT_SECURITY_MCODE
-/* Machine code page protection: 0 = insecure RWX, 1 = secure RW^X. */
+/* Machine code page protection: 0 = insecure RWX, 1 = secure RW^X,
+** 2 = secure RW^X by memfd remapping (Linux; works under MDWE). */
 #define LUAJIT_SECURITY_MCODE	1
+#endif
+#if LUAJIT_SECURITY_MCODE == 2 && !LJ_TARGET_LINUX
+#error "LUAJIT_SECURITY_MCODE=2 (RW^X by memfd remapping) requires Linux"
 #endif
 
 #define LJ_SECURITY_MODE \

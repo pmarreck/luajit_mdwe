@@ -10,6 +10,9 @@
 
 #if LJ_HASJIT || LJ_HASFFI
 LJ_FUNC void lj_mcode_sync(void *start, void *end);
+#if LUAJIT_SECURITY_MCODE == 2
+LJ_FUNC int lj_mcode_memfd(void);
+#endif
 #endif
 
 #if LJ_HASJIT
@@ -22,6 +25,11 @@ LJ_FUNC void lj_mcode_commit(jit_State *J, MCode *m);
 LJ_FUNC void lj_mcode_abort(jit_State *J);
 LJ_FUNC MCode *lj_mcode_patch(jit_State *J, MCode *ptr, int finish);
 LJ_FUNC_NORET void lj_mcode_limiterr(jit_State *J, size_t need);
+#if LUAJIT_SECURITY_MCODE == 2
+LJ_FUNC void lj_mcode_freestate(jit_State *J);
+#else
+#define lj_mcode_freestate(J)	UNUSED(J)
+#endif
 
 #define lj_mcode_commitbot(J, m)	(J->mcbot = (m))
 

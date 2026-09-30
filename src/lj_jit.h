@@ -509,6 +509,9 @@ typedef struct jit_State {
   size_t szmcarea;	/* Size of current mcode area. */
   size_t szallmcarea;	/* Total size of all allocated mcode areas. */
   uintptr_t mcmin, mcmax;	/* Mcode allocation range. */
+#if LUAJIT_SECURITY_MCODE == 2
+  struct MCodeCtx *mcctx;	/* memfd-backed mcode state (lj_mcode.c). */
+#endif
 
   TValue errinfo;	/* Additional info element for trace errors. */
 

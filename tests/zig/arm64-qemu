@@ -21,4 +21,18 @@ fails=0
 want="$(LUA_PATH="$root/src/?.lua;;" "$root/src/luajit" "$root/tests/mdwe/lua/trace_churn.lua" | grep -o 'checksum=.*')"
 got="$(LUA_PATH="$prefix/share/luajit-2.1/?.lua;;" "$wrap" "$root/tests/mdwe/lua/trace_churn.lua" | grep -o 'checksum=.*')"
 if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "arm64-qemu: trace_churn $got matches host"; else echo "arm64-qemu: FAIL trace_churn '$got' != host '$want'"; fails=$((fails+1)); fi
+
+# LUAJIT_SECURITY_MCODE=2 on arm64 (qemu-user: functional only, no MDWE).
+# FFI-based fork/callback scripts need a dynamic libc; static builds lack
+# ffi.C symbols, so they are covered on x86_64 by tests/mdwe/r_mode.
+p2="$root/zig-out/aarch64-linux-musl/ReleaseFast-mcode2"
+if "$root/build" --mcode 2 --target aarch64-linux-musl >>"$root/.build-work/arm64-qemu-build.log" 2>&1; then
+	for c in "jit_smoke:jit=true traces=1 sum=2999998" "trace_churn:$want" "cross_area:checksum=41705695" "maps_audit:writable=0"; do
+		s="${c%%:*}" w="${c#*:}"
+		out="$(LUA_PATH="$p2/share/luajit-2.1/?.lua;;" qemu-aarch64 "$p2/bin/luajit" "$root/tests/mdwe/lua/$s.lua" 2>&1)"
+		if [ $? = 0 ] && [[ "$out" == *"$w"* ]]; then echo "arm64-qemu: mcode=2 $s ok"; else echo "arm64-qemu: FAIL mcode=2 $s: $out"; fails=$((fails+1)); fi
+	done
+else
+	echo "arm64-qemu: FAIL mcode=2 build"; fails=$((fails+1))
+fi
 exit "$fails"

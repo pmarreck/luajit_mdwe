@@ -23,6 +23,12 @@ if "$root/build" >"$root/.build-work/zig-build.log" 2>&1; then
 else
 	echo "zig build failed; see .build-work/zig-build.log"; fails=$((fails+1))
 fi
+# 2b. LUAJIT_SECURITY_MCODE=2 (docs/MDWE_SPEC.md): acceptance tests T1-T11.
+if "$root/build" --mcode 2 >"$root/.build-work/zig-build-mcode2.log" 2>&1; then
+	"$root/tests/mdwe/r_mode" "$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast-mcode2" || fails=$((fails+1))
+else
+	echo "zig build --mcode 2 failed; see .build-work/zig-build-mcode2.log"; fails=$((fails+1))
+fi
 "$root/tests/zig/compare-generated" || fails=$((fails+1))
 "$root/tests/compile/cross-targets" || fails=$((fails+1))
 "$root/tests/zig/arm64-qemu" || fails=$((fails+1))

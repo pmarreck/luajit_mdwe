@@ -6,16 +6,19 @@
 # Upstream's Makefile (make -C src) remains available and is what ./test and
 # ./bm use as the reference build.
 #
-# Usage: ./build [--debug|--safe] [--target TRIPLE] [-- extra zig build args]
+# Usage: ./build [--debug|--safe] [--mcode N] [--target TRIPLE] [-- extra zig build args]
 #   default profile ReleaseFast; --safe = ReleaseSafe; --debug = Debug
+#   --mcode N: LUAJIT_SECURITY_MCODE=N; output goes to <profile>-mcodeN and is
+#   published as bin/<os>/<arch>/luajit-mcodeN, so variants coexist
 set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-profile=ReleaseFast target="" extra=()
+profile=ReleaseFast target="" extra=() mcode=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--debug) profile=Debug ;;
 		--safe) profile=ReleaseSafe ;;
 		--target) target="$2"; shift ;;
+		--mcode) mcode="$2"; shift ;;
 		--) shift; extra=("$@"); break ;;
 		-h|--help) sed -n '2,12p' "$0"; exit 0 ;;
 		*) echo "build: unknown argument $1" >&2; exit 2 ;;
@@ -27,11 +30,12 @@ case "$(uname -s)" in Linux) hos=linux habi=-gnu ;; Darwin) hos=macos habi= ;; *
 case "$(uname -m)" in x86_64|amd64|AMD64) harch=x86_64 ;; aarch64|arm64) harch=aarch64 ;; *) echo "build: unsupported host arch $(uname -m)" >&2; exit 2 ;; esac
 host_triple="$harch-$hos$habi"
 triple="${target:-$host_triple}"
-prefix="$root/zig-out/$triple/$profile"
+variant="$profile${mcode:+-mcode$mcode}"
+prefix="$root/zig-out/$triple/$variant"
 
 # Baseline CPU for host builds too: portable, and what upstream's Makefile
 # compiles with (gcc default), so ReleaseFast comparisons stay like-for-like.
-zig_args=(build --prefix "$prefix" -Doptimize="$profile" -Dtarget="$triple" -Dcpu=baseline "${extra[@]}")
+zig_args=(build --prefix "$prefix" -Doptimize="$profile" -Dtarget="$triple" -Dcpu=baseline ${mcode:+-Dsecurity-mcode=$mcode} "${extra[@]}")
 if [ -n "${IN_NIX_SHELL:-}" ]; then
 	(cd "$root" && zig "${zig_args[@]}") || exit 1
 else
@@ -41,10 +45,11 @@ fi
 if [ -z "$target" ]; then
 	pub="$root/bin/$hos/$harch"
 	mkdir -p "$pub"
-	tmp="$pub/.luajit.$$"
-	ln -sfn "../../../zig-out/$triple/$profile/bin/luajit" "$tmp" && mv -T "$tmp" "$pub/luajit" ||
-		{ echo "build: publishing $pub/luajit failed" >&2; exit 1; }
-	echo "build: $profile $triple -> bin/$hos/$harch/luajit"
+	name="luajit${mcode:+-mcode$mcode}"
+	tmp="$pub/.$name.$$"
+	ln -sfn "../../../zig-out/$triple/$variant/bin/luajit" "$tmp" && mv -T "$tmp" "$pub/$name" ||
+		{ echo "build: publishing $pub/$name failed" >&2; exit 1; }
+	echo "build: $variant $triple -> bin/$hos/$harch/$name"
 else
-	echo "build: $profile $triple -> zig-out/$triple/$profile (cross build, not published)"
+	echo "build: $variant $triple -> zig-out/$triple/$variant (cross build, not published)"
 fi

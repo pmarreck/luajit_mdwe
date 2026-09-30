@@ -31,5 +31,13 @@ for c in "${configs[@]}"; do
 		fi
 	done
 done
-[ "$fails" -eq 0 ] && echo "cross-targets: $n compiles clean (macOS HRT/plain, Windows x86_64/aarch64)"
+# LUAJIT_SECURITY_MCODE=2 is Linux-only and must refuse to build elsewhere.
+for t in aarch64-macos.13.0 x86_64-windows-gnu; do
+	n=$((n+1))
+	out="$(cd "$root/src" && zig cc -target "$t" -c -o "$obj" -DLUAJIT_SECURITY_MCODE=2 -I. lj_mcode.c 2>&1)"; rc=$?
+	if [ "$rc" -ne 0 ] && [[ "$out" == *"LUAJIT_SECURITY_MCODE=2 (RW^X by memfd remapping) requires Linux"* ]]; then :; else
+		echo "cross-targets: FAIL =2 did not refuse $t"; fails=$((fails+1))
+	fi
+done
+[ "$fails" -eq 0 ] && echo "cross-targets: $n checks clean (macOS HRT/plain, Windows x86_64/aarch64; =2 refused off Linux)"
 exit "$fails"

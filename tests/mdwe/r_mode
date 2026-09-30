@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Acceptance tests T1-T11 for LUAJIT_SECURITY_MCODE=2 (docs/MDWE_SPEC.md §8)
+# against an installed =2 build prefix (bin/luajit, lib/libluajit-5.1.a,
+# include/luajit-2.1, share/luajit-2.1). Each JIT workload runs unrestricted,
+# under kernel PR_SET_MDWE, under the systemd seccomp replica and under
+# systemd-run MemoryDenyWriteExecute=yes.
+# Usage: tests/mdwe/r_mode PREFIX   (inside nix develop)
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+prefix="$(cd "${1:?usage: r_mode PREFIX}" && pwd)"
+luajit="$prefix/bin/luajit"
+bin="$root/.build-work/mdwe"
+lua="$root/tests/mdwe/lua"
+export LUA_PATH="$prefix/share/luajit-2.1/?.lua;;"
+pass=0 fail=0 skip=0
+ok() { pass=$((pass+1)); }
+bad() { fail=$((fail+1)); printf '\e[31mFAIL\e[0m %s\n' "$*"; }
+
+mkdir -p "$bin"
+for t in mdwe_exec sdmdwe_seccomp_exec; do
+	[ -x "$bin/${t//_/-}" ] || cc -O2 -Wall -Werror -o "$bin/${t//_/-}" "$root/tests/mdwe/$t.c" || bad "compile $t"
+done
+for t in embed_fork embed_stress; do
+	cc -O2 -Wall -Wextra -Werror -pthread -I"$prefix/include/luajit-2.1" -o "$bin/${t//_/-}-mcode2" \
+		"$root/tests/mdwe/$t.c" "$prefix/lib/libluajit-5.1.a" -lm -ldl 2>"$bin/$t.log" || bad "compile $t: $(cat "$bin/$t.log")"
+done
+
+systemd_ok=0
+if [ "${MDWE_SYSTEMD:-1}" = 1 ] && command -v systemd-run >/dev/null &&
+	systemd-run --user --quiet --wait --pipe --collect true >/dev/null 2>&1; then
+	systemd_ok=1
+fi
+
+run_under() {
+	local mode="$1"; shift
+	case "$mode" in
+		none) out="$("$@" 2>&1)"; rc=$? ;;
+		kernel) out="$("$bin/mdwe-exec" "$@" 2>&1)"; rc=$? ;;
+		seccomp) out="$("$bin/sdmdwe-seccomp-exec" "$@" 2>&1)"; rc=$? ;;
+		systemd) out="$(systemd-run --user --quiet --wait --pipe --collect \
+			-E LUA_PATH="$LUA_PATH" -p MemoryDenyWriteExecute=yes "$@" 2>&1)"; rc=$? ;;
+	esac
+}
+expect() {  # MODE WANT_RC WANT_SUBSTRING cmd...
+	local mode="$1" want_rc="$2" want="$3"; shift 3
+	if [ "$mode" = systemd ] && [ "$systemd_ok" = 0 ]; then skip=$((skip+1)); return; fi
+	run_under "$mode" "$@"
+	if [ "$rc" != "$want_rc" ] || [[ "$out" != *"$want"* ]]; then
+		bad "[$mode] ${*##*/} => rc=$rc out=$(printf %q "${out:0:300}") (want rc=$want_rc, '$want')"
+	else
+		ok
+	fi
+}
+
+# T10
+expect none 0 "2" "$luajit" -e 'print(jit.security("mcode"))'
+
+for mode in none kernel seccomp systemd; do
+	expect $mode 0 "jit=true traces=1 sum=2999998" "$luajit" "$lua/jit_smoke.lua"              # T1
+	for j in "" -joff; do                                                                       # T2
+		expect $mode 0 "sorted=12345" "$luajit" $j "$lua/ffi_callback.lua"
+		expect $mode 0 "cb=ok sorted=12345" "$luajit" $j "$lua/ffi_callback_pcall.lua"
+	done
+	expect $mode 0 "checksum=105769494.398" "$luajit" "$lua/trace_churn.lua"                   # T3
+	expect $mode 0 "checksum=41705695" "$luajit" "$lua/cross_area.lua"                         # T4
+	expect $mode 0 "fork_isolation: ok mode=2" "$luajit" "$lua/fork_isolation.lua"             # T5a/e, T11
+	expect $mode 0 "fork_flush: ok" "$luajit" "$lua/fork_flush.lua"                            # T5b
+	expect $mode 0 "writable=0" "$luajit" "$lua/maps_audit.lua"                                # T6 (P2)
+done
+for mode in none kernel seccomp; do
+	expect $mode 0 "UNCHANGED" "$bin/embed-fork-mcode2" fork                                    # T5c
+	expect $mode 0 "stress: threads=8 rounds=200 ok" "$bin/embed-stress-mcode2"                 # T7
+done
+expect none 4 "CHANGED" "$bin/embed-fork-mcode2" clone                                         # T5d residual
+
+# T6 (P1): mechanical syscall audit of =2 runs.
+audit="$(for s in jit_smoke ffi_callback trace_churn cross_area fork_isolation; do
+	strace -f -e trace=mmap,mprotect,pkey_mprotect "$luajit" "$lua/$s.lua" 2>&1 >/dev/null
+done)"
+if grep -E 'mprotect\([^)]*PROT_EXEC' <<<"$audit" >/dev/null; then bad "P1: mprotect with PROT_EXEC: $(grep -E 'mprotect\([^)]*PROT_EXEC' <<<"$audit" | head -2)"; else ok; fi
+if grep -E 'mmap\([^)]*PROT_WRITE\|PROT_EXEC' <<<"$audit" >/dev/null; then bad "P1: mmap with W|X"; else ok; fi
+if grep -E 'mmap\([^)]*PROT_READ\|PROT_EXEC, MAP_PRIVATE\|MAP_FIXED' <<<"$audit" >/dev/null; then ok; else bad "mechanism: no MAP_FIXED RX private remap seen"; fi
+
+# T8: memfd_create filtered with an errno: JIT-on panics, -joff completes.
+if [ "$systemd_ok" = 1 ]; then
+	out="$(systemd-run --user --quiet --wait --pipe --collect -E LUA_PATH="$LUA_PATH" -p MemoryDenyWriteExecute=yes \
+		-p 'SystemCallFilter=~memfd_create' -p SystemCallErrorNumber=EPERM "$luajit" "$lua/jit_smoke.lua" 2>&1)"; rc=$?
+	if [ "$rc" != 0 ] && [[ "$out" == *"runtime code generation failed, restricted kernel?"* ]]; then ok; else bad "T8 JIT-on: rc=$rc out=$out"; fi
+	out="$(systemd-run --user --quiet --wait --pipe --collect -E LUA_PATH="$LUA_PATH" -p MemoryDenyWriteExecute=yes \
+		-p 'SystemCallFilter=~memfd_create' -p SystemCallErrorNumber=EPERM "$luajit" -joff "$lua/jit_smoke.lua" 2>&1)"; rc=$?
+	if [ "$rc" = 0 ] && [[ "$out" == *"jit=false"* ]]; then ok; else bad "T8 -joff: rc=$rc out=$out"; fi
+else
+	skip=$((skip+2))
+fi
+
+# T9: upstream suite, unrestricted and under both local MDWE surfaces.
+for w in "" mdwe-exec sdmdwe-seccomp-exec; do
+	if [ -z "$w" ]; then target="$luajit"; else
+		target="$root/.build-work/luajit-mcode2-$w"
+		printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$bin/$w" "$luajit" >"$target"; chmod +x "$target"
+	fi
+	if "$root/tests/upstream-suite" "$target" >/dev/null; then ok; else bad "T9 upstream suite under ${w:-none}: $("$root/tests/upstream-suite" "$target" | tail -1)"; fi
+done
+
+printf 'r_mode: %d passed, %d failed, %d skipped (systemd column available: %d)\n' "$pass" "$fail" "$skip" "$systemd_ok"
+[ "$fail" -eq 0 ]

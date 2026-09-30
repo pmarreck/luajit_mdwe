@@ -194,7 +194,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     // Peter's convention: ReleaseFast unless asked otherwise.
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Optimization mode (default: ReleaseFast)") orelse .ReleaseFast;
-    const xcflags = b.option([]const []const u8, "xcflags", "Extra C flags, as Makefile XCFLAGS (repeatable)") orelse &.{};
+    const user_xcflags = b.option([]const []const u8, "xcflags", "Extra C flags, as Makefile XCFLAGS (repeatable)") orelse &.{};
+    // 0 = RWX, 1 = upstream RW^X via mprotect (default), 2 = RW^X by memfd
+    // remapping, usable under MemoryDenyWriteExecute (docs/MDWE_SPEC.md).
+    const security_mcode = b.option(u2, "security-mcode", "LUAJIT_SECURITY_MCODE (default: upstream's 1)");
+    const xcflags = if (security_mcode) |m|
+        std.mem.concat(b.allocator, []const u8, &.{ user_xcflags, &.{b.fmt("-DLUAJIT_SECURITY_MCODE={d}", .{m})} }) catch @panic("OOM")
+    else
+        user_xcflags;
 
     const t = target.result;
     const os = t.os.tag;
