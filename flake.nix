@@ -32,8 +32,8 @@
 			};
 			# The fork's primary build graph: build.zig (no Zig package dependencies,
 			# so no fixed-output fetch step is needed).
-			mkZigLuajit = pkgs: pkgs.stdenv.mkDerivation {
-				pname = "luajit-mdwe";
+			mkZigLuajit = pkgs: { pname ? "luajit-mdwe", extraFlags ? "" }: pkgs.stdenv.mkDerivation {
+				inherit pname;
 				version = "2.1";
 				src = self;
 				nativeBuildInputs = [ pkgs.zig ];
@@ -41,13 +41,17 @@
 				dontStrip = true;
 				buildPhase = ''
 					export HOME=$TMPDIR ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache ZIG_LOCAL_CACHE_DIR=$TMPDIR/zig-local
-					zig build --prefix $out -Doptimize=ReleaseFast -Dcpu=baseline -Drelver=${toString (self.lastModified or 0)}
+					zig build --prefix $out -Doptimize=ReleaseFast -Dcpu=baseline -Drelver=${toString (self.lastModified or 0)} ${extraFlags}
 				'';
 				dontInstall = true;
 			};
 		in {
 			packages = forAll (pkgs: {
-				default = mkZigLuajit pkgs;
+				default = mkZigLuajit pkgs { };
+			} // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+				# memfd remapping on by default (LUAJIT_SECURITY_MCODE=2; Linux only).
+				luajit-mdwe-remap = mkZigLuajit pkgs { pname = "luajit-mdwe-remap"; extraFlags = "-Dsecurity-mcode=2"; };
+			} // {
 				luajit-mdwe-make = mkLuajit pkgs "luajit-mdwe-make" self;
 				luajit-upstream = mkLuajit pkgs "luajit-upstream" luajit-upstream;
 				luajit-test-cleanup = pkgs.runCommandLocal "luajit-test-cleanup" { } ''
@@ -63,6 +67,16 @@
 					LUAJIT_TEST_CLEANUP = "${luajit-test-cleanup}";
 				} ''
 					bash ${self}/tests/upstream-suite ${pkg.default}/bin/luajit | tee $out
+				'';
+			} // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+				# The remap build reports mode 2, compiles traces and passes the suite.
+				remap = pkgs.runCommand "luajit-mdwe-remap-check" {
+					LUAJIT_TEST_CLEANUP = "${luajit-test-cleanup}";
+				} ''
+					lj=${pkg.luajit-mdwe-remap}/bin/luajit
+					[ "$($lj -e 'print(jit.security("mcode"))')" = 2 ]
+					$lj ${self}/tests/mdwe/lua/jit_smoke.lua | grep -q "jit=true traces=1"
+					bash ${self}/tests/upstream-suite $lj | tee $out
 				'';
 			});
 

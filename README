@@ -21,7 +21,8 @@ Enable it at runtime (Linux, any build of this fork; default off):
 
 Set it before the first trace is compiled, or call jit.flush() afterwards.
 Building with -DLUAJIT_SECURITY_MCODE=2 (./build --mcode 2) makes it the
-default. Without the switch the fork behaves like upstream.
+default. The flake exposes that build as packages.<system>.luajit-mdwe-remap
+(Linux). Without the switch the fork behaves like upstream.
 
 Cost, measured against upstream on x86_64 Linux: no measurable change on 19
 steady-state benchmarks; about +30-45% on a compile-heavy stress test, since
