@@ -237,6 +237,27 @@ static int s_seal_ro(void)
 	return run(p, 42);
 }
 
+/* Variant without /proc: RX MAP_PRIVATE view from the writable description.
+** Private mappings do not count as writable mappings for sealing. */
+static int s_seal_private(void)
+{
+	int fd, seals;
+	uint8_t *p, b = 0;
+	setenv("WX_MFD", "noexec-seal", 0);
+	if ((fd = memfd_new()) < 0) return refused("memfd_create");
+	p = mmap(NULL, SZ, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) return refused("mmap RW");
+	emit(p, 42);
+	if (mmap(p, SZ, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED, fd, 0) != p) return refused("MAP_FIXED RX private");
+	sync_icache(p, 16);
+	if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW)) return refused("F_ADD_SEALS");
+	seals = fcntl(fd, F_GET_SEALS);
+	if (pwrite(fd, &b, 1, 0) != -1 || errno != EPERM) { printf("pwrite NOT refused\n"); return 1; }
+	if (fallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE, 0, 4096) != -1 || errno != EPERM) { printf("punch NOT refused\n"); return 1; }
+	printf("SEALED 0x%x ", seals);
+	return run(p, 42);
+}
+
 /* Counterpart: an RX MAP_SHARED view from the WRITABLE description blocks the seal. */
 static int s_seal_rw_busy(void)
 {
@@ -350,7 +371,7 @@ int main(int argc, char **argv)
 		{ "mprotect", s_mprotect }, { "rwx", s_rwx }, { "dual", s_dual },
 		{ "remap", s_remap }, { "memfd-mprotect", s_memfd_mprotect },
 		{ "procmem", s_procmem }, { "rx-to-rwx", s_rx_to_rwx }, { "rx-noop", s_rx_noop },
-		{ "fork-anon", s_fork_anon }, { "fork-dual", s_fork_dual }, { "seal-ro", s_seal_ro }, { "remap-race", s_remap_race }, { "remap-race-gap", s_remap_race_gap }, { "seal-rw-busy", s_seal_rw_busy }, { "fork-punch", s_fork_punch }, { "fork-dual-private-rx", s_fork_dual_private_rx },
+		{ "fork-anon", s_fork_anon }, { "fork-dual", s_fork_dual }, { "seal-ro", s_seal_ro }, { "remap-race", s_remap_race }, { "remap-race-gap", s_remap_race_gap }, { "seal-rw-busy", s_seal_rw_busy }, { "seal-private", s_seal_private }, { "fork-punch", s_fork_punch }, { "fork-dual-private-rx", s_fork_dual_private_rx },
 	};
 	size_t i;
 	setvbuf(stdout, NULL, _IONBF, 0);

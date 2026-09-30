@@ -88,6 +88,8 @@ for mode in none kernel seccomp systemd; do
 	# be write-sealed; one from the writable description cannot (EBUSY).
 	expect $mode 0 "SEALED 0x2e OK 42" "$bin/wx-probe" seal-ro
 	expect $mode 2 "REFUSED F_ADD_SEALS: Device or resource busy" "$bin/wx-probe" seal-rw-busy
+	# Same without /proc: a MAP_PRIVATE RX view does not count as writable.
+	expect $mode 0 "SEALED 0x2e OK 42" "$bin/wx-probe" seal-private
 	# A parent hole-punch after fork() destroys the child's code.
 	expect $mode 4 "CHILD KILLED by signal 11" "$bin/wx-probe" fork-punch
 	# MAP_FIXED RX->RX replacement never exposes a gap to an executing thread;

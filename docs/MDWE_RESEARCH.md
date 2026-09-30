@@ -52,10 +52,14 @@ production sandbox or sysctl was changed.
 - Linux 6.9 (`d5aad4c2ca05`, `166ce846dc59`) made support per-architecture;
   unsupported architectures (parisc, pre-ARMv6) return `EINVAL`, which is what
   systemd's fallback keys on **[SRC]**.
-- Current logic, `map_deny_write_exec()` in `mm/vma.h` **[SRC]**: refuse if
-  the new flags have `VM_EXEC` and `VM_WRITE`; refuse if the new flags have
-  `VM_EXEC` and the old ones did not. `mmap_region()` passes the same flags as
-  old and new, so a fresh `mmap(PROT_READ|PROT_EXEC)` of anything is allowed.
+- Logic of `map_deny_write_exec()` **[SRC]**: refuse if the new flags have
+  `VM_EXEC` and `VM_WRITE`; refuse if the new flags have `VM_EXEC` and the old
+  ones did not. In Linux 6.18 (the kernel measured here) it is `static inline`
+  in `include/linux/mman.h`; the mmap path calls it as
+  `map_deny_write_exec(vm_flags, vm_flags)` (`mm/vma.c:2724` at `v6.18`), so a
+  fresh `mmap(PROT_READ|PROT_EXEC)` of anything is allowed; `mm/mprotect.c`
+  calls it with the old and new flags and returns `EACCES`. Current mainline
+  moved it to `mm/vma.h` with unchanged logic.
   The check is per VMA; it never inspects pages, files or other mappings.
 - The flag is sticky and inherited across `fork` and `execve` (unless
   `NO_INHERIT`) **[SRC]**. Refusals return `EACCES` **[MEAS]**.
@@ -73,7 +77,8 @@ production sandbox or sysctl was changed.
   `PR_GET_MDWE=1`, `Seccomp: 0`, `Seccomp_filters: 0`, `NoNewPrivs: 1`, and
   refusals return `EACCES` **[MEAS]**. **The Dune brief's description of a
   seccomp filter is accurate only for systemd < v254 or kernels < 6.3.** On
-  current systems the two "surfaces" are the same kernel mechanism.
+  current systems systemd installs only the kernel mechanism. The seccomp filter
+  still behaves differently (§2.3), which is why the suite keeps the replica.
 - The seccomp fallback, `src/shared/seccomp-util.c:seccomp_memory_deny_write_execute`
   **[SRC]**, answers `EPERM` to: `mmap`/`mmap2` with `PROT_WRITE|PROT_EXEC`
   both set; `mprotect`/`pkey_mprotect` with `PROT_EXEC` set; `shmat` with
@@ -152,7 +157,10 @@ mode bits and seals them, which gates `execve`, not `mmap` (`do_mmap` checks
 only `path_noexec()` of the mount) **[SRC: mm/memfd.c,
 Documentation/userspace-api/mfd_noexec.rst; MEAS for the flags]**. Under
 `vm.memfd_noexec=2`, Linux ≥ 6.6 upgrades flagless calls to `NOEXEC_SEAL` and
-refuses `MFD_EXEC` with `EACCES` **[SRC: `202e14222fad`, `9876cfe8ec1c`]**. I
+refuses `MFD_EXEC` with `EACCES` **[SRC: `202e14222fad`, `9876cfe8ec1c`; checked
+in `mm/memfd.c` v6.18 `check_sysctl_memfd_noexec`: flagless calls get
+`MFD_NOEXEC_SEAL` at scope ≥ 1 (`MEMFD_NOEXEC_SCOPE_NOEXEC_SEAL`), and any call
+still lacking it is refused at scope 2]**. I
 could not set the sysctl in an unprivileged user+pid namespace (`Permission
 denied`) and did not set it globally, so the level-2 behavior is untested.
 
@@ -180,6 +188,21 @@ for PHP in `6dc3ef5e1a` after fork crashes, saw nginx workers crash in
 `sljit_free_exec` (nixpkgs #384302), and removed it in `1e9bd5d98f`
 (2026-08-02) **[SRC, as reported by the ecosystem research pass; commits not
 re-read by me]**.
+
+### 4.2 Review follow-up probes (2026-09-29) **[MEAS]**
+
+Added after the Grok review of spec revision 1; each is asserted by
+`tests/mdwe/run` under none, kernel `PR_SET_MDWE` and the seccomp replica
+(and systemd, except the crash-expected control).
+
+| Probe | Result |
+|---|---|
+| `seal-private`: memfd (`MFD_NOEXEC_SEAL`) written through a shared RW view, then `MAP_FIXED` RX **private** from the same fd; `F_ADD_SEALS(WRITE\|SHRINK\|GROW)` | seals `0x2e`; `pwrite` and punch `EPERM`; code still runs |
+| `seal-ro`: same, RX **shared** from an `O_RDONLY` reopen via `/proc/self/fd` (reviewer's configuration) | seals `0x2e`; same |
+| `seal-rw-busy`: RX shared view from the writable description | `F_ADD_SEALS`: `EBUSY` |
+| `fork-punch`: parent punches the memfd after `fork()` while the child executes | child killed by SIGSEGV |
+| `remap-race`: 20,000 `MAP_FIXED` RX→RX replacements while a second thread executes the page | no fault (also 200,000 once by hand) |
+| `remap-race-gap`: same with an explicit `munmap` before each replacement (negative control) | SIGSEGV (5/5 by hand; asserted) |
 
 ## 5. Performance measurements **[MEAS]**
 

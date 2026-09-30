@@ -11,14 +11,16 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Inventory RW/RX address-translation sites per backend for the dual-alias option. (2026-09-29 20:10 EDT)
 - [x] Write `docs/MDWE_RESEARCH.md` and `docs/MDWE_SPEC.md`. (2026-09-29 20:25 EDT)
 - [x] Ask Einstein to start an independent Grok reviewer against the completed spec (request sent 2026-09-29 20:30 EDT).
-- [ ] Resolve Grok review findings (awaiting note in `inbox/`); implementation stays stopped until then.
-- [ ] Watch job running for the review note (started 2026-09-29 21:20 EDT); on arrival, resolve findings, then begin implementation.
+- [x] Grok review received (accept with required changes); reproduced its measured claims; spec revision 2 resolves all five blockers and advisories (§10). (2026-09-29 22:10 EDT)
+- [ ] Peter to accept the review verdict + spec revision 2; then implement design R test-first (T1-T11).
 - [x] Pin upstream LuaJIT and LuaJIT-test-cleanup as flake inputs; add `./bm` (fork vs upstream, median/MAD noise gate, memory-capped). (2026-09-29 21:35 EDT)
 - [ ] Track upstream-worthy fixes in `docs/UPSTREAM_CANDIDATES.md`; apply ones that test better (Peter, 2026-09-29; ongoing).
 - [x] Fix unchecked mprotect in FFI callback allocation (catchable error instead of SIGSEGV), test-first. (2026-09-29 21:45 EDT)
 - [x] Run the upstream LuaJIT-test-cleanup suite from `./test` with exact baseline-failure gate. (2026-09-29 21:35 EDT)
 - [x] `bm`: ABBA ordering and fork/upstream ratio history gate; proven to trip with `BM_FORK_FLAGS=-joff`. (2026-09-29 21:45 EDT)
 - [x] Fix upstream macOS HRT compile error (void `mcode_setprot` returning 0) with cross-target compile test. (2026-09-29 21:55 EDT)
+
+- [ ] Zig build architecture (Peter, 2026-09-29): `build.zig` + `build.zig.zon` building LuaJIT (minilua, buildvm, generated headers, lib, CLI) alongside upstream Makefile; flake builds via Zig; cross-target matrix.
 
 ## Reviewed implementation (blocked on Grok review)
 

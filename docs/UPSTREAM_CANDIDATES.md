@@ -24,6 +24,9 @@ records its evidence. Applied here when tests and benchmarks support it.
   `cb=ok sorted=12345`. JIT-disabled build checked by hand. Upstream
   LuaJIT-test-cleanup suite unchanged (505/508, same 3 baseline failures as
   pinned upstream). `./bm`: all 20 benchmarks within noise of upstream.
+- Limitation (stated with the patch): this turns a crash into a catchable
+  error. It does not make callbacks work under W^X enforcement; the fork's
+  `LUAJIT_SECURITY_MCODE=2` design is what makes the trampoline executable.
 - Upstream form: drop the fork's test scaffolding; the C change is ~20 lines.
 
 ## 2. macOS hardened runtime: `return 0;` in void `mcode_setprot`
