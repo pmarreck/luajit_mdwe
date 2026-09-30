@@ -10,7 +10,8 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Research upstream LuaJIT discussion, maintained forks and other JIT designs using primary sources. (2026-09-29 20:15 EDT)
 - [x] Inventory RW/RX address-translation sites per backend for the dual-alias option. (2026-09-29 20:10 EDT)
 - [x] Write `docs/MDWE_RESEARCH.md` and `docs/MDWE_SPEC.md`. (2026-09-29 20:25 EDT)
-- [ ] Ask Einstein to start an independent Grok reviewer against the completed spec; stop implementation at that boundary.
+- [x] Ask Einstein to start an independent Grok reviewer against the completed spec (request sent 2026-09-29 20:30 EDT).
+- [ ] Resolve Grok review findings (awaiting note in `inbox/`); implementation stays stopped until then.
 
 ## Reviewed implementation (blocked on Grok review)
 
