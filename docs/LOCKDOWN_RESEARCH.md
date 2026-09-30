@@ -127,21 +127,27 @@ Partial prototype results [MEAS, `lockdown_probe.c`, none and kernel MDWE]:
 
 - The fork's remap cycle (RW shared view, RX private view, patch, RX again) on
   the pre-created fd works with the filter installed.
-- New-file RX mappings (R1), `memfd_create`, and `dup2` onto the mcode fd are
-  refused with `EPERM`.
+- New-file RX mappings (R1), `memfd_create`, `dup2` onto the mcode fd, and
+  `close` or `close_range` covering it are refused with `EPERM`. Each step
+  succeeds with the filter omitted (paired control).
 - The mcode fd itself can still be mapped writable and then executable. This
   is the ceiling of any in-process design: the process that legitimately
   writes code can be made to write other code. Only a compiler outside the
   attacker's process closes it, and only if the attacker's process cannot
   choose the bytes that compiler emits [INF].
-- `close` / `close_range` of the mcode fd were not refused: the filter had a
-  jump-offset bug that was not fixed before the work stopped.
-- The child-process test (fork, then exec a dynamically linked `true`) exited
-  0 under the filter. This does **not** show that children work. The mcode
-  memfd was probably fd 3 and close-on-exec, so the child's first library
-  load plausibly reused fd 3 and matched the filter [INF, UNV]. An earlier
-  note to Dune stated that such a filter stops the loader in children; that
-  was a prediction, not a measurement.
+- A child started after lockdown (fork, then exec the dynamically linked
+  `true`) fails to start, 3 of 3 runs: `true: error while loading shared
+  libraries: libgmp.so.10: cannot close file descriptor: Operation not
+  permitted`, exit 127. The mcode memfd is close-on-exec, so its fd number is
+  free in the child; the loader opened its first library on that number, the
+  RX mapping passed the filter because the number matched, and the loader's
+  `close` was then refused [INF from the error message; fd numbers not
+  traced]. Children break through this fd-number collision,
+  not through the mmap rule. A first run exited 0 only because two further
+  jump-offset bugs in the prototype filter left the `close` rules unreached;
+  both were fixed (2026-09-30) and every step above rerun under none and
+  kernel MDWE. An earlier note to Dune predicted the failure via the mmap
+  rule; the failure is real but the mechanism differs.
 - The R3 check under the filter was refused during its own setup, before the
   route was attempted, so it says nothing either way.
 - Filter cost per syscall was not measured.
@@ -150,7 +156,7 @@ Structural limits, independent of the bugs above [INF]:
 
 - Seccomp filters survive `fork` and `execve`. A filter keyed to one fd number
   applies to every descendant, where that number means something else, so
-  children either break or accidentally pass. A process that spawns helpers
+  a dynamically linked child breaks (measured, §5 above). A process that spawns helpers
   (Dune's bridge runs `bash`, then `rabbitmqctl`, then BEAMJIT) must spawn
   them before lockdown or through a helper started before it.
 - After lockdown, `dlopen` (so `ffi.load`) cannot map new libraries.
@@ -180,8 +186,7 @@ Do not add a lockdown mode to the fork for now.
 
 Revisit if a user needs a JIT in a process that spawns no children and loads
 no libraries after startup; the prototype results in §5 are the starting
-point, and its open bugs must be fixed and the child and cost questions
-measured first.
+point; the filter's per-syscall cost must be measured first.
 
 ## 7. Open items
 
