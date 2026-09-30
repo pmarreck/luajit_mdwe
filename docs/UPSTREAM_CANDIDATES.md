@@ -47,3 +47,25 @@ records its evidence. Applied here when tests and benchmarks support it.
   after it, 10 compiles (macOS HRT/plain, Windows x86_64/aarch64) are clean
   with `-Wall -Werror`. On Linux x86_64 the fork's `lj_mcode.o` disassembly is
   byte-identical to upstream's. Not executed on macOS (no Mac runner here).
+
+## 3. macOS hardened runtime: FFI callback page not executable (SIGBUS)
+
+- Problem: with `-DLUAJIT_ENABLE_OSX_HRT`, `callback_mcode_new`
+  (`src/lj_ccallback.c`) maps its `MAP_JIT` trampoline page with
+  `PROT_READ|PROT_WRITE|CCPROT_CREATE`, but `CCPROT_CREATE` only covers
+  NetBSD's `PROT_MPROTECT` and is 0 on macOS. A `MAP_JIT` region must be
+  created executable (`lj_mcode.c` does this via `MCPROT_CREATE = PROT_EXEC`);
+  toggling `pthread_jit_write_protect_np()` does not add execute permission.
+  The first callback call dies with SIGBUS (exit 138), with or without `-joff`
+  and with the `com.apple.security.cs.allow-jit` entitlement. Possibly the
+  "bus error" reported in LuaJIT #1334 that led to HRT being opt-in (not
+  confirmed).
+- Fix: `CCPROT_CREATE` is `PROT_EXEC` when `CCMAP_CREATE` (MAP_JIT) is active,
+  mirroring `lj_mcode.c`.
+- Evidence (Apple M4 Max, macOS 26.7.1, nixpkgs clang 21.1.8, ad-hoc signed
+  with `--options runtime` and the allow-jit entitlement): `tests/macos/hrt`
+  failed with SIGBUS on `ffi_callback.lua`, `-joff ffi_callback.lua` and
+  `ffi_callback_pcall.lua` before the fix; after it, all pass, JIT traces give
+  the expected checksum and the upstream suite matches its baseline (505/508).
+  Upstream at `c6ffc141` cannot be tested this way because of candidate 2
+  (its HRT build does not compile; reproduced natively on the Mac).

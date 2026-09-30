@@ -14,6 +14,8 @@ annotate=[
 	test = Full suite: static LuaJIT build plus MDWE characterization
 	tests/benchmark/layout-compare = Layout-controlled =1 vs =2 comparison across -falign-functions builds
 	tests/compile/cross-targets = zig cc compile matrix for macOS (HRT/plain) and Windows mcode/callback allocators, -Werror
+	tests/macos/hrt = macOS hardened-runtime (MAP_JIT) build, sign, JIT/callback/suite checks; runs on a Mac
+	tests/macos/remote = Sync working tree to a Mac over ssh and run native + HRT checks there
 	tests/mdwe/embed_fork.c = C harness: fork/raw clone while another thread compiles; child checks its code bytes
 	tests/mdwe/embed_stress.c = C harness: 8-thread multi-lua_State JIT stress with -joff cross-check
 	tests/mdwe/exec_bench.c = Executes identical code from anon vs memfd private/shared RX pages (icache cost of backing)

@@ -290,18 +290,22 @@ static void *callback_mcode_init(global_State *g, uint32_t *page)
 #define F_SEAL_WRITE		0x0008
 #endif
 #endif
-#ifdef PROT_MPROTECT
-#define CCPROT_CREATE	(PROT_MPROTECT(PROT_EXEC))
-#else
-#define CCPROT_CREATE	0
-#endif
-
 /* Check for macOS hardened runtime. */
 #if defined(LUAJIT_ENABLE_OSX_HRT) && LUAJIT_SECURITY_MCODE != 0 && defined(MAP_JIT) && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 110000
 #include <pthread.h>
 #define CCMAP_CREATE	MAP_JIT
 #else
 #define CCMAP_CREATE	0
+#endif
+
+#ifdef PROT_MPROTECT
+#define CCPROT_CREATE	(PROT_MPROTECT(PROT_EXEC))
+#elif CCMAP_CREATE
+/* MAP_JIT regions must be created executable (as in lj_mcode.c); writes are
+** then toggled per thread with pthread_jit_write_protect_np(). */
+#define CCPROT_CREATE	PROT_EXEC
+#else
+#define CCPROT_CREATE	0
 #endif
 
 #endif

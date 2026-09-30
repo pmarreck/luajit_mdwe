@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# macOS hardened-runtime (MAP_JIT, -DLUAJIT_ENABLE_OSX_HRT) runtime checks.
+# Run ON a Mac inside `nix develop` (tests/macos/remote drives this over ssh).
+# Builds the HRT variant with upstream's Makefile in a scratch copy, ad-hoc
+# signs it with the hardened runtime and com.apple.security.cs.allow-jit, and
+# requires: JIT traces compile and give the expected checksum, FFI callbacks
+# work with and without -joff, and the upstream suite matches its baseline.
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+[ "$(uname -s)" = Darwin ] || { echo "macos-hrt: must run on macOS"; exit 2; }
+work="$root/.build-work/macos-hrt"
+fails=0
+bad() { fails=$((fails+1)); echo "macos-hrt: FAIL $*"; }
+mkdir -p "$work"
+(cd "$root" && git ls-files src dynasm) | while read -r f; do mkdir -p "$work/$(dirname "$f")"; cp -p "$root/$f" "$work/$f"; done
+make -s -C "$work/src" -j8 BUILDMODE=static XCFLAGS=-DLUAJIT_ENABLE_OSX_HRT >"$work/make.log" 2>&1 ||
+	{ echo "macos-hrt: FAIL build (see $work/make.log)"; tail -3 "$work/make.log"; exit 1; }
+cat >"$work/jit.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>
+PLIST
+bin="$work/luajit-hrt"
+cp "$work/src/luajit" "$bin"
+/usr/bin/codesign -f -s - --options runtime --entitlements "$work/jit.plist" "$bin" 2>/dev/null || bad "codesign"
+/usr/bin/codesign -d --verbose=2 "$bin" 2>&1 | grep -q "flags=.*runtime" || bad "binary lacks the hardened runtime flag"
+export LUA_PATH="$root/src/?.lua;;"
+lua="$root/tests/mdwe/lua"
+check() {  # WANT cmd...
+	local want="$1" label; shift
+	label="$(printf '%s ' "$@" | sed "s|$root/||g")"
+	out="$("$@" 2>&1)"; rc=$?
+	if [ "$rc" = 0 ] && [[ "$out" == *"$want"* ]]; then echo "macos-hrt: ok $label"; else bad "$label: rc=$rc out=$out"; fi
+}
+check "jit=true traces=1 sum=2999998" "$bin" "$lua/jit_smoke.lua"
+check "checksum=105769494.398" "$bin" "$lua/trace_churn.lua"
+check "sorted=12345" "$bin" "$lua/ffi_callback.lua"
+check "sorted=12345" "$bin" -joff "$lua/ffi_callback.lua"
+check "cb=ok sorted=12345" "$bin" "$lua/ffi_callback_pcall.lua"
+"$root/tests/upstream-suite" "$bin" | sed 's/^/macos-hrt: /' || fails=$((fails+1))
+exit "$fails"

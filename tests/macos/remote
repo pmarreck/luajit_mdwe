@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Run the macOS checks on a remote Mac over ssh (BatchMode; Tailscale host).
+# Syncs the CURRENT working tree (tracked + untracked non-ignored files)
+# into a scratch clone on the Mac, then runs tests/macos/hrt and the upstream
+# suite against a plain native build there.
+# Usage: tests/macos/remote [host]   (default: $MACOS_HOST or m4max)
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+host="${1:-${MACOS_HOST:-m4max}}"
+dir='$HOME/.cache/claude-remote/luajit_mdwe'
+ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" true 2>/dev/null || { echo "macos-remote: $host unreachable"; exit 1; }
+ssh -o BatchMode=yes "$host" "mkdir -p $dir" || exit 1
+(cd "$root" && git ls-files -z --cached --others --exclude-standard | tar --null -T - -cf -) | ssh -o BatchMode=yes "$host" "cd $dir && tar -xf -" || exit 1
+ssh -o BatchMode=yes "$host" "cd $dir && nix develop -c bash -c '
+	fails=0
+	make -s -C src -j8 BUILDMODE=static >/tmp/luajit-mdwe-native.log 2>&1 || { echo macos-native: FAIL build; exit 1; }
+	tests/upstream-suite src/luajit | sed \"s/^/macos-native: /\" || fails=\$((fails+1))
+	tests/macos/hrt || fails=\$((fails+1))
+	exit \$fails
+'" 2>&1 | grep -v "evaluation warning"

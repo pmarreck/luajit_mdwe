@@ -18,7 +18,11 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [ ] Decide with Peter: `=2` default `sizemcode` (16 KB cuts compile overhead to +20%) and whether compile-heavy startup matters for Dune.
 - [ ] Deliver to Dune/Einstein: how to build and use `=2` under MemoryDenyWriteExecute; FFI callbacks work in `=2`.
 - [ ] arm64 hardware run of `=2` (qemu-user covers functional behavior only).
+- [ ] Document `-Osizemcode=16` as the =2 tuning knob (no default change) (Peter, 2026-09-30).
+- [ ] Optional sizemcode autotune for a given workload, as an external script, no core code (Peter, 2026-09-30).
+- [ ] Make the memfd mode runtime-selectable in one build, opt-in, minimal code (Peter, 2026-09-30).
 - [ ] Use the M4 Max MacBook Pro (tailscale, nix) as a remote dev/test machine: native macOS runs (incl. hardened-runtime JIT), and arm64 Linux via its builder VM if present (Peter, 2026-09-30).
+- [x] macOS on the M4 Max: native suite 505/508; HRT build fails upstream (candidate 2) and callbacks SIGBUS (candidate 3, fixed, tests/macos). (2026-09-30 15:55 EDT)
 - [x] Pin upstream LuaJIT and LuaJIT-test-cleanup as flake inputs; add `./bm` (fork vs upstream, median/MAD noise gate, memory-capped). (2026-09-29 21:35 EDT)
 - [ ] Track upstream-worthy fixes in `docs/UPSTREAM_CANDIDATES.md`; apply ones that test better (Peter, 2026-09-29; ongoing).
 - [x] Fix unchecked mprotect in FFI callback allocation (catchable error instead of SIGSEGV), test-first. (2026-09-29 21:45 EDT)
