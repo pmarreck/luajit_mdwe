@@ -8,6 +8,7 @@ annotate=[
 	build-all = Cross-build the 5-target matrix via ./build
 	build.zig = Zig build of LuaJIT mirroring src/Makefile config (lj_arch.h macro probe), host tools, generated headers, lib, CLI
 	build.zig.zon = Zig package manifest (no dependencies)
+	docs/LOCKDOWN_RESEARCH.md = Research record: executable-memory routes MDWE leaves open, neighbors (BEAMJIT, .NET 8), in-process lockdown limits; recommends not building it
 	docs/MDWE_RESEARCH.md = MDWE research record: measurements, sources, precedents, backend inventory
 	docs/MDWE_SPEC.md = Technical spec (design R: memfd MAP_FIXED remap) awaiting Grok review
 	docs/UPSTREAM_CANDIDATES.md = Standalone fixes suitable for upstream LuaJIT submission, with evidence

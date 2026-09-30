@@ -42,3 +42,12 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Implement design R behind `LUAJIT_SECURITY_MCODE=2` (`./build --mcode 2`), failing tests first. (2026-09-30)
 - [x] Upstream suite, stress, fork, negative enforcement controls and upstream comparisons; gaps recorded in spec §9. (2026-09-30)
 - [x] Document measured capabilities and limits (spec §7, research §5.1). (2026-09-30)
+
+## Lockdown escalation (Peter via dune_awakening_server, 2026-09-30 17:41 EDT)
+
+Rescoped 2026-09-30 17:51 EDT (Peter, via Dune): not a Dune requirement; Dune stops at MDWE + systemd sandboxing + dedicated user. Lockdown is an optional fork feature, built only if it earns its place. Peter chose: research doc only, minimal code; he arranges the review.
+
+Keep the JIT but close the memfd-to-executable route that MDWE leaves open. Same process: research + spec, independent Grok review, then implement.
+
+- [x] Research record `docs/LOCKDOWN_RESEARCH.md`: routes MDWE leaves open, BEAMJIT/.NET 8 behavior, partial seccomp prototype, recommendation not to build (Peter: write the research doc; he arranges review). Probes kept out of the repo in .build-work/lockdown/. (2026-09-30 18:40 EDT)
+- [ ] Open: vm.memfd_noexec measured in a root pid namespace or VM; /proc/self/mem force parameter verified; NoExecPaths vs this fork.
