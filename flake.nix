@@ -17,7 +17,9 @@
 
 	outputs = { self, nixpkgs, luajit-upstream, luajit-test-cleanup }:
 		let
-			systems = [ "x86_64-linux" "aarch64-linux" ];
+			# Darwin: native macOS runs of =1 (incl. the hardened-runtime MAP_JIT path);
+			# =2 is Linux-only.
+			systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 			forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 			# Upstream's Makefile build (reference and comparison control).
 			mkLuajit = pkgs: pname: src: pkgs.stdenv.mkDerivation {
@@ -25,6 +27,7 @@
 				version = "2.1";
 				enableParallelBuilding = true;
 				makeFlags = [ "PREFIX=$(out)" "BUILDMODE=static" ];
+				env = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin { MACOSX_DEPLOYMENT_TARGET = "11.0"; };
 				dontStrip = true;
 			};
 			# The fork's primary build graph: build.zig (no Zig package dependencies,
@@ -66,18 +69,21 @@
 			devShells = forAll (pkgs: {
 				default = pkgs.mkShell {
 					packages = with pkgs; [
-						gcc
 						gnumake
 						hyperfine
+						coreutils
+						jq
+						zig
+					] ++ lib.optionals stdenv.hostPlatform.isLinux [
+						gcc
 						strace
 						gdb
 						linuxHeaders
-						coreutils
 						util-linux
-						jq
-						zig
 						qemu
 					];
+					# Upstream's Makefile refuses to build for macOS without it.
+					MACOSX_DEPLOYMENT_TARGET = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin "11.0";
 					LUAJIT_TEST_CLEANUP = "${luajit-test-cleanup}";
 				};
 			});
