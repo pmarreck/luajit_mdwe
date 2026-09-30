@@ -16,14 +16,14 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Implement design R (`LUAJIT_SECURITY_MCODE=2`) test-first; T1-T11 pass under none/kernel/seccomp/systemd; fork and P1/P2 audits mutation-checked. (2026-09-30 14:20 EDT)
 - [x] Benchmark `=2` vs `=1`/upstream with layout control: compile-bound +35%, steady state unresolved except possible ~1% on mandelbrot; MAP_POPULATE and range-limited remap measured and rejected. (2026-09-30 14:45 EDT)
 - [ ] Decide with Peter: `=2` default `sizemcode` (16 KB cuts compile overhead to +20%) and whether compile-heavy startup matters for Dune.
-- [ ] Deliver to Dune/Einstein: how to build and use `=2` under MemoryDenyWriteExecute; FFI callbacks work in `=2`.
+- [x] Deliver to Dune: flake input, `-Omcoderemap=1` usage, costs and open items (llmsend note to dune_awakening_server). (2026-09-30 16:40 EDT)
 - [ ] arm64 hardware run of `=2` (qemu-user covers functional behavior only).
 - [x] Documented `-Osizemcode=16` tuning knob in README and spec §7 (no default change). (2026-09-30 16:35 EDT)
 - [x] `bin/sizemcode-tune` autotune script (trace_churn: 8 KB fastest, 64 KB +21%). (2026-09-30 16:35 EDT)
 - [x] Fixed ./bm ratio gate pairing the previous fork row with another variant's upstream row (tests/bm/prev-pair). (2026-09-30 16:20 EDT)
 - [x] Runtime switch: JIT param `mcoderemap` (`-Omcoderemap=1`, `jit.opt.start`) on every Linux build; default 1 only for =2; latched per empty area chain; callback page follows it. r_mode runtime 56/56, =2 56/56, arm64 qemu, no-JIT FFI build ok; bm: default build = upstream on 20/20, flag: steady-state same, trace_churn +45%. (2026-09-30 16:35 EDT)
-- [ ] README section and GitHub repo description stating the fork's purpose (MDWE-compatible JIT via memfd remapping, runtime opt-in) (Peter, 2026-09-30).
-- [ ] After the runtime switch is green and pushed, notify dune_awakening_server (llmsend) so it can add this fork to its flake (Peter, 2026-09-30).
+- [x] README "About this fork" section and GitHub repo description set. (2026-09-30 16:40 EDT)
+- [x] Pushed a1d1ff3f and notified dune_awakening_server for its flake. (2026-09-30 16:40 EDT)
 - [ ] Hold M4 Max VM work until Peter says the Hyperspace dedup run is finished (disk at 97%) (Peter, 2026-09-30).
 - [ ] Use the M4 Max MacBook Pro (tailscale, nix) as a remote dev/test machine: native macOS runs (incl. hardened-runtime JIT), and arm64 Linux via its builder VM if present (Peter, 2026-09-30).
 - [x] macOS on the M4 Max: native suite 505/508; HRT build fails upstream (candidate 2) and callbacks SIGBUS (candidate 3, fixed, tests/macos). (2026-09-30 15:55 EDT)
