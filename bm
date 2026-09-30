@@ -11,6 +11,8 @@
 # |delta median| > 3*sqrt(ra^2+rb^2) and > MIN_PCT.
 #
 # Usage: nix develop -c ./bm [--runs N] [--only name] [--no-log]
+# BM_FORK_FLAGS (e.g. "-joff") is passed to the fork only; it exists to prove
+# the gate trips on a real slowdown (use with --no-log).
 # Runs inside a memory-capped systemd --user scope when available.
 set -u
 
@@ -81,10 +83,11 @@ robust() {
 		($t|med) as $m|"\($m) \([$t[]|(.-$m)|if .<0 then -. else . end]|sort|med*1.4826)"' "$2"
 }
 noise_check() {  # label mean_a sd_a mean_b sd_b -> prints verdict, bumps flags
-	local label="$1" v
+	local label="$1" v info="${6:-}"
 	v="$(awk -v a="$2" -v sa="$3" -v b="$4" -v sb="$5" -v p="$MIN_PCT" 'BEGIN{
 		d=b-a; ad=d<0?-d:d; thr=3*sqrt(sa*sa+sb*sb); pct=100*d/a
 		printf "%s %+.1f%% (3σ=%.1f%%)", (ad>thr && (pct>p||pct<-p)) ? "CHANGED" : "same", pct, 100*thr/a}')"
+	if [ -n "$info" ]; then printf '  \e[2m%s: %s (informational)\e[0m\n' "$label" "$v"; return; fi
 	case "$v" in CHANGED*) flags=$((flags+1)); printf '  \e[33;1m%s: %s\e[0m\n' "$label" "$v" ;; *) printf '  %s: %s\n' "$label" "$v" ;; esac
 }
 
@@ -96,22 +99,50 @@ for c in "${cases[@]}"; do
 	# benchmarks emit binary (mandelbrot PBM); nondeterministic fields removed:
 	# trace_churn trace counts (PRNG-dependent) and series' self-reported timing.
 	norm() { LC_ALL=C sed -E 's/compiled=[0-9]+ aborted=[0-9]+ //; s/, [0-9.]+ s, [0-9.]+ iterations\/s//' | sha256sum; }
-	of="$(cd "$bench" && "$fork" "$script" $arg 2>&1 | norm)"
+	of="$(cd "$bench" && "$fork" ${BM_FORK_FLAGS:-} "$script" $arg 2>&1 | norm)"
 	ou="$(cd "$bench" && "$up" "$script" $arg 2>&1 | norm)"
 	if [ "$of" != "$ou" ]; then printf '\e[31mOUTPUT MISMATCH\e[0m %s\n' "$name"; flags=$((flags+1)); continue; fi
 	json="$work/$name.json"
-	(cd "$bench" && hyperfine -N --warmup 2 --runs "$runs" --export-json "$json" \
-		-n fork "$fork $script $arg" -n upstream "$up $script $arg" >/dev/null 2>&1) ||
+	# ABBA ordering: hyperfine runs each command's samples as one block, so a
+	# load or frequency shift during one block would bias the comparison
+	# (observed: batch-level 45% swings in user time on a shared machine).
+	half=$(( (runs + 1) / 2 ))
+	(cd "$bench" &&
+		hyperfine -N --warmup 2 --runs "$half" --export-json "$json.ab" \
+			-n fork "$fork ${BM_FORK_FLAGS:-} $script $arg" -n upstream "$up $script $arg" >/dev/null 2>&1 &&
+		hyperfine -N --warmup 2 --runs "$half" --export-json "$json.ba" \
+			-n upstream "$up $script $arg" -n fork "$fork ${BM_FORK_FLAGS:-} $script $arg" >/dev/null 2>&1) ||
 		{ printf '\e[31mHYPERFINE FAILED\e[0m %s\n' "$name"; flags=$((flags+1)); continue; }
+	# Pool both halves per command; per-run user/system are averaged.
+	jq -s '{results: ([.[].results[]] | group_by(.command) | map({
+		command: .[0].command, times: (map(.times[]) ),
+		user: (map(.user) | add / length), system: (map(.system) | add / length)})
+		| map(. + {mean: (.times | add / length),
+			stddev: ((.times | add / length) as $m | (.times | map((. - $m) * (. - $m)) | add / (length - 1)) | sqrt),
+			median: (.times | sort | if length % 2 == 1 then .[(length - 1) / 2] else (.[length / 2 - 1] + .[length / 2]) / 2 end)}))}' \
+		"$json.ab" "$json.ba" >"$json"
 	echo "$name $arg"
 	read -r fm fs < <(robust fork "$json")
 	read -r um us < <(robust upstream "$json")
 	noise_check "fork vs upstream" "$um" "$us" "$fm" "$fs"
+	# History gate on the fork/upstream RATIO: the unchanged upstream control
+	# cancels machine drift between runs (load, frequency), which raw per-variant
+	# history cannot. Raw history is still printed, informationally.
+	pf="$(grep "\"bench\":\"$name\",\"variant\":\"fork\"" "$ledger" 2>/dev/null | tail -1)"
+	pu="$(grep "\"bench\":\"$name\",\"variant\":\"upstream\"" "$ledger" 2>/dev/null | tail -1)"
+	if [ -n "$pf" ] && [ -n "$pu" ]; then
+		read -r r0 s0 r1 s1 < <(awk -v f0="$(jq -r .median_s <<<"$pf")" -v sf0="$(jq -r '.mad_sigma_s // .stddev_s' <<<"$pf")" \
+			-v u0="$(jq -r .median_s <<<"$pu")" -v su0="$(jq -r '.mad_sigma_s // .stddev_s' <<<"$pu")" \
+			-v f1="$fm" -v sf1="$fs" -v u1="$um" -v su1="$us" 'BEGIN{
+			r0=f0/u0; r1=f1/u1
+			print r0, r0*sqrt((sf0/f0)^2+(su0/u0)^2), r1, r1*sqrt((sf1/f1)^2+(su1/u1)^2)}')
+		noise_check "fork/upstream ratio vs last ($(jq -r .commit <<<"$pf"))" "$r0" "$s0" "$r1" "$s1"
+	fi
 	for v in fork upstream; do
 		prev="$(grep "\"bench\":\"$name\",\"variant\":\"$v\"" "$ledger" 2>/dev/null | tail -1)"
 		read -r m s < <(robust "$v" "$json")
 		if [ -n "$prev" ]; then
-			noise_check "$v vs last ($(jq -r .commit <<<"$prev"))" "$(jq -r .median_s <<<"$prev")" "$(jq -r '.mad_sigma_s // .stddev_s' <<<"$prev")" "$m" "$s"
+			noise_check "$v vs last ($(jq -r .commit <<<"$prev"))" "$(jq -r .median_s <<<"$prev")" "$(jq -r '.mad_sigma_s // .stddev_s' <<<"$prev")" "$m" "$s" info
 		fi
 		[ "$log" = 1 ] && jq -c --arg ts "$(date -Iseconds)" --arg commit "$commit" --argjson dirty "$dirty" \
 			--arg bench "$name" --arg v "$v" --arg arg "$arg" --arg machine "$machine" \

@@ -181,6 +181,7 @@ ERRDEF(FFI_CBACKOV,	"no support for callbacks on this OS")
 #else
 ERRDEF(FFI_CBACKOV,	"too many callbacks")
 #endif
+ERRDEF(FFI_CBACKPROT,	"runtime code generation failed, restricted kernel?")
 ERRDEF(FFI_NYIPACKBIT,	"NYI: packed bit fields")
 ERRDEF(FFI_NYICALL,	"NYI: cannot call this C function (yet)")
 #endif

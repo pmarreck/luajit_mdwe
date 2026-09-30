@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Runs the pinned LuaJIT-test-cleanup suite (flake input) against a LuaJIT
+# binary and requires the failing-test set to equal the known upstream
+# baseline exactly: tests that also fail on pinned upstream c6ffc141 because
+# the 2016 suite predates newer library contents (e.g. table.move).
+#   363 lib/contents.lua pre-5.2 math, 365 pre-5.2 string, 366 pre-5.2 table
+# A new failure or a newly passing baseline test both fail this script.
+# Usage: tests/upstream-suite [path/to/luajit]   (run inside nix develop)
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+luajit="$(readlink -f "${1:-$root/src/luajit}")"
+baseline="363 365 366"
+[ -n "${LUAJIT_TEST_CLEANUP:-}" ] || { echo "upstream-suite: run inside 'nix develop'" >&2; exit 2; }
+t="$LUAJIT_TEST_CLEANUP/test"
+out="$(cd "$t" && LUA_PATH="$t/?.lua;;" timeout 900 "$luajit" test.lua 2>&1)"
+summary="$(grep -E '^[0-9]+ passed, [0-9]+ failed' <<<"$out" | tail -1)"
+failed="$(grep -oE 'pass command line arguments: .*' <<<"$out" | cut -d: -f2 | xargs)"
+if [ -z "$summary" ]; then
+	echo "upstream-suite: FAIL (no summary; suite crashed?)"; tail -5 <<<"$out"; exit 1
+fi
+if [ "$failed" != "$baseline" ]; then
+	echo "upstream-suite: FAIL: $summary; failing [$failed], baseline [$baseline]"
+	exit 1
+fi
+echo "upstream-suite: $summary (matches upstream baseline [$baseline])"

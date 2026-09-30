@@ -4,8 +4,9 @@
 set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fails=0
-if ! make -s -C "$root/src" -j"$(nproc)" BUILDMODE=static >"$root/.build-work/make.log" 2>&1; then
+if ! make -s -C "$root/src" -j16 BUILDMODE=static >"$root/.build-work/make.log" 2>&1; then
 	echo "LuaJIT build failed; see .build-work/make.log"; exit 1
 fi
 "$root/tests/mdwe/run" "$root/src/luajit" || fails=$((fails+1))
+"$root/tests/upstream-suite" "$root/src/luajit" || fails=$((fails+1))
 exit "$fails"

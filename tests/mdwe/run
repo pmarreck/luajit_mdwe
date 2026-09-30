@@ -120,9 +120,11 @@ if [ -x "$luajit" ]; then
 			expect $mode 1 "runtime code generation failed, restricted kernel?" "$luajit" "$lua/jit_smoke.lua"
 		fi
 	done
-	# FFI callback trampolines SIGSEGV under MDWE even with -joff (unchecked mprotect).
-	expect kernel 139 "" "$luajit" -joff "$lua/ffi_callback.lua"
-	expect seccomp 139 "" "$luajit" -joff "$lua/ffi_callback.lua"
+	# FFI callback creation must fail cleanly (catchable error), never SIGSEGV.
+	for mode in none kernel seccomp systemd; do
+		if [ "$mode" = none ]; then want="cb=ok sorted=12345"; else want="cb=error runtime code generation failed, restricted kernel?"; fi
+		expect $mode 0 "$want" "$luajit" -joff "$lua/ffi_callback_pcall.lua"
+	done
 else
 	bad "no LuaJIT binary at $luajit (run: make -C src)"
 fi

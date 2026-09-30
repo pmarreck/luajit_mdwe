@@ -326,14 +326,28 @@ static void callback_mcode_new(CTState *cts)
 #if LJ_TARGET_WINDOWS
   {
     DWORD oprot;
-    LJ_WIN_VPROTECT(p, sz, PAGE_EXECUTE_READ, &oprot);
+    if (!LJ_WIN_VPROTECT(p, sz, PAGE_EXECUTE_READ, &oprot)) {
+      VirtualFree(p, 0, MEM_RELEASE);
+      goto protfail;
+    }
   }
 #elif LJ_TARGET_POSIX
 #if CCMAP_CREATE
   pthread_jit_write_protect_np(1);
 #else
-  mprotect(p, sz, (PROT_READ|PROT_EXEC));
+  if (mprotect(p, sz, (PROT_READ|PROT_EXEC))) {
+    munmap(p, sz);
+    goto protfail;
+  }
 #endif
+#endif
+  return;
+#if LJ_TARGET_WINDOWS || (LJ_TARGET_POSIX && !CCMAP_CREATE)
+protfail:
+  /* The page would not be executable, e.g. under W^X enforcement. Fail the
+  ** callback creation instead of handing out a trampoline that faults. */
+  cts->cb.mcode = NULL;
+  lj_err_caller(cts->L, LJ_ERR_FFI_CBACKPROT);
 #endif
 }
 
