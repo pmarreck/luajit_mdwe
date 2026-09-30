@@ -1,9 +1,10 @@
 # LuaJIT under MemoryDenyWriteExecute: technical spec
 
-Status: **revision 2, resolving the independent Grok review of revision 1
-(`cefa181e`, verdict "accept with required changes", 2026-09-29). Awaiting
-Peter's acceptance before implementing design R.** The resolution of each
-finding is in §10.
+Status: **revision 2, accepted by Peter on 2026-09-30 and implemented as
+`LUAJIT_SECURITY_MCODE=2` (commit `8b7d18ee`); acceptance tests T1-T11 pass
+(`tests/mdwe/r_mode`).** Revision 2 resolved the independent Grok review of
+revision 1 (`cefa181e`, "accept with required changes"); see §10. Measured
+costs of the implementation are in §7 and `MDWE_RESEARCH.md` §5.1.
 Evidence and sources: [`MDWE_RESEARCH.md`](MDWE_RESEARCH.md). Purpose: [`../INTENT.md`](../INTENT.md).
 
 Baseline: LuaJIT v2.1 @ `c6ffc141` (2026-09-08). Measurements: Linux 6.18.54
@@ -362,6 +363,16 @@ and median/MAD statistics; `MDWE_RESEARCH.md` §5):
 
 Optimizations held in reserve, each needing its own measurement: remapping
 only the touched page range; `MAP_POPULATE` on the RX remap.
+
+**Measured after implementation** (`MDWE_RESEARCH.md` §5.1): the compile-bound
+cost is about +31-38% on `trace_churn` (all extra system time), consistent
+across five code layouts (geomean 1.35); steady-state benchmarks show no
+resolved mode effect across layouts (`mandelbrot` +0.6-1.9% in 5/5 layouts is
+a possible small effect). Both reserved optimizations were measured and are
+slower (`MAP_POPULATE` +10 ms; range-limited remapping +15 ms on a 68 ms
+baseline) and were not adopted. The cost scales with `sizemcode`: +20% at
+16 KB, +31% at 64 KB (default), +48% at 256 KB; lowering the default for `=2`
+is a tuning decision left open (larger traces could exceed smaller areas).
 
 ## 8. Acceptance tests (written first and failing, before implementation)
 

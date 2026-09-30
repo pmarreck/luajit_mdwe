@@ -226,6 +226,67 @@ randomized hot-counter penalties and mcode placement (`LUAJIT_SECURITY_PRNG`)
 **[INF]**; the checksum is identical in every run. Benchmarks must therefore
 report counts and variance, not a single run.
 
+### 5.1 Measurements of the implemented design R (2026-09-30) **[MEAS]**
+
+Implementation: commit `8b7d18ee` (`LUAJIT_SECURITY_MCODE=2`). Machine as §1;
+load average 9-40 during runs (shared machine), recorded with each run below.
+
+Compile-bound cost, Zig builds of the same tree differing only in the mode
+(`trace_churn.lua`, hyperfine 40 runs, medians):
+
+| Workload | `=1` | `=2` | Δ |
+|---|---|---|---|
+| `trace_churn 200` | 19 ms (user 13, sys 6) | 25 ms (user 13, sys 11) | +6 ms (+32%) |
+| `trace_churn 600` | 52 ms (user 35, sys 17) | 68-72 ms (user 37-43, sys 29-37) | +16-20 ms (+31-38%) |
+
+Both modes make about the same number of protection changes (1,582
+`mprotect` for `=1` vs 1,608 `mmap` for `=2` on `trace_churn 200`); the extra
+is system time per change. It scales with area size (`-Osizemcode`, 30 runs,
+`trace_churn 600`): 16 KB +10 ms (+20%), 64 KB (default) +16 ms (+31%),
+256 KB +27 ms (+48%); `=1` also gets slightly faster with smaller areas
+(50/52/56 ms).
+
+Reserved optimizations, each measured against the committed `=2` (same run,
+40 runs, `trace_churn 600`) and rejected:
+
+| Variant | Median | Note |
+|---|---|---|
+| committed `=2` | 68-70 ms | |
+| `MAP_POPULATE` on the RX remap | 80 ms (sys 41) | prefaulting all pages costs more than the faults it saves |
+| remap only `[mcbot, mctop)` on reserve, whole area on patch | 83-87 ms (sys 44-48), 6,344 vs 4,777 `mmap` calls | range extension on patches and VMA splitting cost more |
+
+Steady state. A first single-layout comparison showed `=2` 1.8-3.7% slower
+on `life` and `binary-trees`, with 9.5x more L1 icache misses on `life` at the
+same instruction count. Controls showed this was code layout, not the mode:
+
+- `tests/mdwe/exec_bench.c`: the same 1,024 small functions executed from
+  anonymous RX, memfd private RX and memfd shared RX pages: 141.4 / 139.7 /
+  137.7 ms, icache misses 1.18M (±26%) / 0.63M / 0.66M. Backing alone costs
+  nothing measurable.
+- With `-joff` (no mcode at all) the two binaries still differ 3x in icache
+  misses, the other way round (`=1` 3.3M, `=2` 1.0M; `life`).
+
+`tests/benchmark/layout-compare` therefore builds both modes at five code
+layouts (`-falign-functions` 16..256; permuting the source list was tried and
+moved no symbol) and reports per-layout `=2`/`=1` median ratios (40 runs
+each):
+
+| Benchmark | a16 | a32 | a64 | a128 | a256 | geomean |
+|---|---|---|---|---|---|---|
+| life | 1.0019 | 0.9997 | 1.0114 | 0.9983 | 0.9986 | 1.0020 |
+| binary-trees 14 | 0.9700 | 1.0103 | 0.9860 | 0.9721 | 1.0200 | 0.9915 |
+| scimark-fft 5000 | 1.0011 | 0.9999 | 1.0009 | 1.0008 | 0.9999 | 1.0005 |
+| mandelbrot 1000 | 1.0057 | 1.0072 | 1.0185 | 1.0187 | 1.0106 | 1.0121 |
+| trace_churn 200 | 1.3821 | 1.3793 | 1.3260 | 1.3486 | 1.3251 | 1.3520 |
+
+Reading: steady-state differences scatter around 1 across layouts (no mode
+effect resolved) except `mandelbrot`, slower under `=2` in 5/5 layouts by
+0.6-1.9% (possible small effect; not established with five layouts). The
+compile-bound cost (about +35%) is consistent across layouts. `./bm` with
+`BM_FORK_BIN=<=2 build>` against upstream agrees: 19 of 20 benchmarks within
+noise, `trace_churn` +27.7% (3σ 29.7%, not resolved in that run), `life`
+flagged +5.3% in that single-layout run.
+
 ## 6. Address translation inventory for the dual-alias option
 
 Source reading of `src/` at `c6ffc141` **[SRC; counts are approximate, per

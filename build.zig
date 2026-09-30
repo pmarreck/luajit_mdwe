@@ -198,6 +198,12 @@ pub fn build(b: *std.Build) void {
     // 0 = RWX, 1 = upstream RW^X via mprotect (default), 2 = RW^X by memfd
     // remapping, usable under MemoryDenyWriteExecute (docs/MDWE_SPEC.md).
     const security_mcode = b.option(u2, "security-mcode", "LUAJIT_SECURITY_MCODE (default: upstream's 1)");
+    // Benchmark methodology only: -falign-functions=N moves every C function,
+    // changing code layout (and so icache/iTLB behavior) without changing code.
+    // Comparing configurations across several alignments separates their effect
+    // from layout luck (Mytkowicz et al., ASPLOS 2009). (Permuting the source
+    // list was tried first and did not move any symbol.)
+    const layout_align = b.option(u32, "layout-align", "-falign-functions=N for the library (benchmarking)");
     const xcflags = if (security_mcode) |m|
         std.mem.concat(b.allocator, []const u8, &.{ user_xcflags, &.{b.fmt("-DLUAJIT_SECURITY_MCODE={d}", .{m})} }) catch @panic("OOM")
     else
@@ -320,7 +326,10 @@ pub fn build(b: *std.Build) void {
     });
     lib_mod.addIncludePath(gen.getDirectory());
     lib_mod.addIncludePath(src);
-    lib_mod.addCSourceFiles(.{ .root = src, .files = &core_sources, .flags = cflags.items });
+    var lib_cflags: std.ArrayList([]const u8) = .empty;
+    lib_cflags.appendSlice(b.allocator, cflags.items) catch @panic("OOM");
+    if (layout_align) |n| lib_cflags.append(b.allocator, b.fmt("-falign-functions={d}", .{n})) catch @panic("OOM");
+    lib_mod.addCSourceFiles(.{ .root = src, .files = &core_sources, .flags = lib_cflags.items });
     if (os == .windows) lib_mod.addObjectFile(ljvm_out) else lib_mod.addAssemblyFile(ljvm_out);
     const lib = b.addLibrary(.{ .name = "luajit-5.1", .linkage = .static, .root_module = lib_mod });
     for ([_][]const u8{ "lua.h", "lualib.h", "lauxlib.h", "luaconf.h", "lua.hpp" }) |h|

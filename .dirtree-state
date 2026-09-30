@@ -12,9 +12,11 @@ annotate=[
 	docs/UPSTREAM_CANDIDATES.md = Standalone fixes suitable for upstream LuaJIT submission, with evidence
 	flake.nix = Pinned research dev shell (gcc, make, hyperfine, strace, gdb)
 	test = Full suite: static LuaJIT build plus MDWE characterization
+	tests/benchmark/layout-compare = Layout-controlled =1 vs =2 comparison across -falign-functions builds
 	tests/compile/cross-targets = zig cc compile matrix for macOS (HRT/plain) and Windows mcode/callback allocators, -Werror
 	tests/mdwe/embed_fork.c = C harness: fork/raw clone while another thread compiles; child checks its code bytes
 	tests/mdwe/embed_stress.c = C harness: 8-thread multi-lua_State JIT stress with -joff cross-check
+	tests/mdwe/exec_bench.c = Executes identical code from anon vs memfd private/shared RX pages (icache cost of backing)
 	tests/mdwe/flip_bench.c = Per-round cost of mprotect vs MAP_FIXED remap vs dual-alias code updates
 	tests/mdwe/lua/cross_area.lua = T4: side traces patching parents in other mcode areas
 	tests/mdwe/lua/ffi_callback.lua = Exercises FFI callback trampoline page via qsort

@@ -13,6 +13,8 @@
 # Usage: nix develop -c ./bm [--runs N] [--only name] [--no-log]
 # BM_FORK_BIN benchmarks another fork binary (e.g. the build.zig product)
 # instead of the Makefile-built src/luajit.
+# BM_FORK_LABEL names the fork variant in the ledger (default "fork"), so a
+# differently configured binary (e.g. "fork-mcode2") keeps its own history.
 # BM_FORK_FLAGS (e.g. "-joff") is passed to the fork only; it exists to prove
 # the gate trips on a real slowdown (use with --no-log).
 # Runs inside a memory-capped systemd --user scope when available.
@@ -132,7 +134,7 @@ for c in "${cases[@]}"; do
 	# History gate on the fork/upstream RATIO: the unchanged upstream control
 	# cancels machine drift between runs (load, frequency), which raw per-variant
 	# history cannot. Raw history is still printed, informationally.
-	pf="$(grep "\"bench\":\"$name\",\"variant\":\"fork\"" "$ledger" 2>/dev/null | tail -1)"
+	pf="$(grep "\"bench\":\"$name\",\"variant\":\"${BM_FORK_LABEL:-fork}\"" "$ledger" 2>/dev/null | tail -1)"
 	pu="$(grep "\"bench\":\"$name\",\"variant\":\"upstream\"" "$ledger" 2>/dev/null | tail -1)"
 	if [ -n "$pf" ] && [ -n "$pu" ]; then
 		read -r r0 s0 r1 s1 < <(awk -v f0="$(jq -r .median_s <<<"$pf")" -v sf0="$(jq -r '.mad_sigma_s // .stddev_s' <<<"$pf")" \
@@ -143,14 +145,15 @@ for c in "${cases[@]}"; do
 		noise_check "fork/upstream ratio vs last ($(jq -r .commit <<<"$pf"))" "$r0" "$s0" "$r1" "$s1"
 	fi
 	for v in fork upstream; do
-		prev="$(grep "\"bench\":\"$name\",\"variant\":\"$v\"" "$ledger" 2>/dev/null | tail -1)"
+		label="$v"; [ "$v" = fork ] && label="${BM_FORK_LABEL:-fork}"
+		prev="$(grep "\"bench\":\"$name\",\"variant\":\"$label\"" "$ledger" 2>/dev/null | tail -1)"
 		read -r m s < <(robust "$v" "$json")
 		if [ -n "$prev" ]; then
-			noise_check "$v vs last ($(jq -r .commit <<<"$prev"))" "$(jq -r .median_s <<<"$prev")" "$(jq -r '.mad_sigma_s // .stddev_s' <<<"$prev")" "$m" "$s" info
+			noise_check "$label vs last ($(jq -r .commit <<<"$prev"))" "$(jq -r .median_s <<<"$prev")" "$(jq -r '.mad_sigma_s // .stddev_s' <<<"$prev")" "$m" "$s" info
 		fi
 		[ "$log" = 1 ] && jq -c --arg ts "$(date -Iseconds)" --arg commit "$commit" --argjson dirty "$dirty" \
-			--arg bench "$name" --arg v "$v" --arg arg "$arg" --arg machine "$machine" \
-			'.results[]|select(.command==$v)|{ts:$ts,machine:$machine,commit:$commit,dirty:$dirty,bench:$bench,variant:$v,arg:$arg,runs:(.times|length),mean_s:.mean,stddev_s:.stddev,median_s:.median,mad_sigma_s:(.times|sort as $t|($t|length) as $n|(if $n%2==1 then $t[($n-1)/2] else ($t[$n/2-1]+$t[$n/2])/2 end) as $m|[$t[]|(.-$m)|if .<0 then -. else . end]|sort|(if $n%2==1 then .[($n-1)/2] else (.[$n/2-1]+.[$n/2])/2 end)*1.4826),user_s:.user,system_s:.system}' \
+			--arg bench "$name" --arg v "$v" --arg label "$label" --arg arg "$arg" --arg machine "$machine" \
+			'.results[]|select(.command==$v)|{ts:$ts,machine:$machine,commit:$commit,dirty:$dirty,bench:$bench,variant:$label,arg:$arg,runs:(.times|length),mean_s:.mean,stddev_s:.stddev,median_s:.median,mad_sigma_s:(.times|sort as $t|($t|length) as $n|(if $n%2==1 then $t[($n-1)/2] else ($t[$n/2-1]+$t[$n/2])/2 end) as $m|[$t[]|(.-$m)|if .<0 then -. else . end]|sort|(if $n%2==1 then .[($n-1)/2] else (.[$n/2-1]+.[$n/2])/2 end)*1.4826),user_s:.user,system_s:.system}' \
 			"$json" >>"$ledger"
 	done
 done

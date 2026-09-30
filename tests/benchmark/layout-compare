@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Layout-controlled comparison of LUAJIT_SECURITY_MCODE=1 vs =2.
+# Code layout alone moves icache/iTLB behavior by several times between two
+# builds of identical code (measured: docs/MDWE_RESEARCH.md §5), so a single
+# build pair cannot attribute a few-percent difference to the mode. This builds
+# both modes at several -falign-functions values (same code, different layout),
+# measures each benchmark per layout with hyperfine, and reports per-layout
+# =2/=1 median ratios. A mode effect shows as a consistent ratio across
+# layouts; layout luck shows as ratios that scatter around 1 or change sign.
+# Usage: tests/benchmark/layout-compare [runs]   (inside nix develop)
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+runs="${1:-20}"
+aligns=(16 32 64 128 256)
+work="$root/.build-work/layout"
+bench="$LUAJIT_TEST_CLEANUP/bench"
+cases=("life" "binary-trees 14" "scimark-fft 5000" "mandelbrot 1000" "trace_churn 200")
+mkdir -p "$work"
+for a in "${aligns[@]}"; do
+	for m in 1 2; do
+		[ -x "$work/m$m-a$a/bin/luajit" ] && continue
+		(cd "$root" && zig build -Dcpu=baseline -Dsecurity-mcode=$m -Dlayout-align=$a --prefix "$work/m$m-a$a") >/dev/null 2>&1 ||
+			{ echo "layout-compare: build m=$m align=$a failed"; exit 1; }
+	done
+done
+printf '%-18s' bench; for a in "${aligns[@]}"; do printf '%10s' "a$a"; done; printf '%12s\n' geomean
+for c in "${cases[@]}"; do
+	set -- $c; name="$1" arg="${2:-}"
+	if [ "$name" = trace_churn ]; then script="$root/tests/mdwe/lua/trace_churn.lua"; else script="$bench/$name.lua"; fi
+	printf '%-18s' "$name"
+	logsum=0 n=0 i=0
+	for a in "${aligns[@]}"; do
+		one="$work/m1-a$a/bin/luajit" two="$work/m2-a$a/bin/luajit"
+		if [ $((i % 2)) = 0 ]; then order=("$one" "$two"); else order=("$two" "$one"); fi
+		i=$((i+1))
+		(cd "$bench" && LUA_PATH="$root/src/?.lua;;" hyperfine -N --warmup 2 --runs "$runs" --export-json "$work/r.json" \
+			"${order[0]} $script $arg" "${order[1]} $script $arg" >/dev/null 2>&1) || { printf '%10s' ERR; continue; }
+		r="$(jq -r --arg one "$one" '[.results[] | {k: (if (.command | startswith($one + " ")) then "one" else "two" end), m: .median}] | from_entries? // (map({(.k): .m}) | add) | (.two / .one)' "$work/r.json")"
+		printf '%10.4f' "$r"
+		logsum="$(awk -v s="$logsum" -v r="$r" 'BEGIN{print s + log(r)}')"; n=$((n+1))
+	done
+	awk -v s="$logsum" -v n="$n" 'BEGIN{printf "%12.4f\n", exp(s/n)}'
+done
+echo "(values are =2/=1 median time ratios per layout; >1 means =2 slower)"
