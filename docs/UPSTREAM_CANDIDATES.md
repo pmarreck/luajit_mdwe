@@ -25,3 +25,22 @@ records its evidence. Applied here when tests and benchmarks support it.
   LuaJIT-test-cleanup suite unchanged (505/508, same 3 baseline failures as
   pinned upstream). `./bm`: all 20 benchmarks within noise of upstream.
 - Upstream form: drop the fork's test scaffolding; the C change is ~20 lines.
+
+## 2. macOS hardened runtime: `return 0;` in void `mcode_setprot`
+
+- Problem: `68354f44` (2025-11-06, "Allow mcode allocations outside of the
+  jump range to the support code") changed `mcode_setprot` from `int` to
+  `void` but left `return 0;` in the `LUAJIT_ENABLE_OSX_HRT` (MAP_JIT) branch.
+  Clang rejects this (`error: void function 'mcode_setprot' should not return
+  a value [-Wreturn-mismatch]`, clang 21.1.8 via zig 0.16.0), so an HRT build
+  of upstream v2.1 fails to compile. Still present at upstream `c6ffc141`
+  (fetched 2026-09-29). With the `return` removed, `mcode_protfail` becomes
+  unused on that path (`-Wunused-function`).
+- Fix: drop the `return 0;`; hoist the MCMAP_CREATE (hardened-runtime)
+  detection above `mcode_protfail` and define it only when a caller exists
+  (`LUAJIT_SECURITY_MCODE != 0 && !MCMAP_CREATE`).
+- Evidence: `tests/compile/cross-targets` compiled `lj_mcode.c` for aarch64
+  and x86_64 macOS 13 with `-DLUAJIT_ENABLE_OSX_HRT` and failed before the fix;
+  after it, 10 compiles (macOS HRT/plain, Windows x86_64/aarch64) are clean
+  with `-Wall -Werror`. On Linux x86_64 the fork's `lj_mcode.o` disassembly is
+  byte-identical to upstream's. Not executed on macOS (no Mac runner here).

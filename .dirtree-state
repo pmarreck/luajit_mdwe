@@ -8,6 +8,7 @@ annotate=[
 	docs/UPSTREAM_CANDIDATES.md = Standalone fixes suitable for upstream LuaJIT submission, with evidence
 	flake.nix = Pinned research dev shell (gcc, make, hyperfine, strace, gdb)
 	test = Full suite: static LuaJIT build plus MDWE characterization
+	tests/compile/cross-targets = zig cc compile matrix for macOS (HRT/plain) and Windows mcode/callback allocators, -Werror
 	tests/mdwe/flip_bench.c = Per-round cost of mprotect vs MAP_FIXED remap vs dual-alias code updates
 	tests/mdwe/lua/ffi_callback.lua = Exercises FFI callback trampoline page via qsort
 	tests/mdwe/lua/ffi_callback_pcall.lua = FFI callback must work or raise a catchable error, never SIGSEGV

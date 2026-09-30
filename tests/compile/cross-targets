@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Compiles the OS-specific machine-code and FFI-callback allocators for
+# targets a Linux build never compiles (macOS with and without the hardened
+# runtime, Windows), using zig cc's bundled libc headers. Warnings are errors.
+# Catches e.g. a value returned from a void function on the MAP_JIT path.
+# Does not prove runtime behavior on those targets.
+# (Object compile rather than -fsyntax-only: zig 0.16 reports a spurious
+# FileNotFound for lj_ccallback.c with -fsyntax-only.)
+# Usage: tests/compile/cross-targets   (run inside nix develop; needs zig)
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+command -v zig >/dev/null || { echo "cross-targets: zig missing (run inside nix develop)"; exit 1; }
+obj="${TMPDIR:-/tmp}/cross-targets-$$.o"
+fails=0 n=0
+# target|extra flags
+configs=(
+	"aarch64-macos.13.0|-DLUAJIT_ENABLE_OSX_HRT"
+	"x86_64-macos.13.0|-DLUAJIT_ENABLE_OSX_HRT"
+	"aarch64-macos.13.0|"
+	"x86_64-windows-gnu|"
+	"aarch64-windows-gnu|"
+)
+for c in "${configs[@]}"; do
+	t="${c%%|*}" extra="${c#*|}"
+	for f in lj_mcode.c lj_ccallback.c; do
+		n=$((n+1))
+		out="$(cd "$root/src" && zig cc -target "$t" -c -o "$obj" -Wall -Werror $extra -I. "$f" 2>&1)"; rc=$?
+		out="$(grep -v 'argument unused during compilation' <<<"$out")"
+		if [ "$rc" -ne 0 ] || [ -n "$out" ]; then
+			echo "cross-targets: FAIL $f ($t $extra)"; printf '%s\n' "$out" | head -5; fails=$((fails+1))
+		fi
+	done
+done
+[ "$fails" -eq 0 ] && echo "cross-targets: $n compiles clean (macOS HRT/plain, Windows x86_64/aarch64)"
+exit "$fails"

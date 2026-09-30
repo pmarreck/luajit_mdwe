@@ -9,4 +9,5 @@ if ! make -s -C "$root/src" -j16 BUILDMODE=static >"$root/.build-work/make.log" 
 fi
 "$root/tests/mdwe/run" "$root/src/luajit" || fails=$((fails+1))
 "$root/tests/upstream-suite" "$root/src/luajit" || fails=$((fails+1))
+"$root/tests/compile/cross-targets" || fails=$((fails+1))
 exit "$fails"

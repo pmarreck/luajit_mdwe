@@ -52,6 +52,7 @@
 						coreutils
 						util-linux
 						jq
+						zig
 					];
 					LUAJIT_TEST_CLEANUP = "${luajit-test-cleanup}";
 				};

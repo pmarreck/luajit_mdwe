@@ -63,7 +63,19 @@ void lj_mcode_sync(void *start, void *end)
 
 #if LJ_HASJIT
 
-#if LUAJIT_SECURITY_MCODE != 0
+#if LJ_TARGET_POSIX
+#include <sys/mman.h>
+#endif
+
+/* Check for macOS hardened runtime. */
+#if LJ_TARGET_POSIX && defined(LUAJIT_ENABLE_OSX_HRT) && LUAJIT_SECURITY_MCODE != 0 && defined(MAP_JIT) && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 110000
+#include <pthread.h>
+#define MCMAP_CREATE	MAP_JIT
+#else
+#define MCMAP_CREATE	0
+#endif
+
+#if LUAJIT_SECURITY_MCODE != 0 && !MCMAP_CREATE
 /* Protection twiddling failed. Probably due to kernel security. */
 static LJ_NORET LJ_NOINLINE void mcode_protfail(jit_State *J)
 {
@@ -107,18 +119,8 @@ static void mcode_setprot(jit_State *J, void *p, size_t sz, DWORD prot)
 
 #elif LJ_TARGET_POSIX
 
-#include <sys/mman.h>
-
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS	MAP_ANON
-#endif
-
-/* Check for macOS hardened runtime. */
-#if defined(LUAJIT_ENABLE_OSX_HRT) && LUAJIT_SECURITY_MCODE != 0 && defined(MAP_JIT) && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 110000
-#include <pthread.h>
-#define MCMAP_CREATE	MAP_JIT
-#else
-#define MCMAP_CREATE	0
 #endif
 
 #define MCPROT_RW	(PROT_READ|PROT_WRITE)
@@ -153,7 +155,6 @@ static void mcode_setprot(jit_State *J, void *p, size_t sz, int prot)
 #if MCMAP_CREATE
   UNUSED(J); UNUSED(p); UNUSED(sz);
   pthread_jit_write_protect_np((prot & PROT_EXEC));
-  return 0;
 #else
   if (mprotect(p, sz, prot)) mcode_protfail(J);
 #endif

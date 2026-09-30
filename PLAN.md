@@ -18,6 +18,7 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Fix unchecked mprotect in FFI callback allocation (catchable error instead of SIGSEGV), test-first. (2026-09-29 21:45 EDT)
 - [x] Run the upstream LuaJIT-test-cleanup suite from `./test` with exact baseline-failure gate. (2026-09-29 21:35 EDT)
 - [x] `bm`: ABBA ordering and fork/upstream ratio history gate; proven to trip with `BM_FORK_FLAGS=-joff`. (2026-09-29 21:45 EDT)
+- [x] Fix upstream macOS HRT compile error (void `mcode_setprot` returning 0) with cross-target compile test. (2026-09-29 21:55 EDT)
 
 ## Reviewed implementation (blocked on Grok review)
 
