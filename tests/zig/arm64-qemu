@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Emulated arm64 execution of the build.zig product (static aarch64-musl under
+# qemu-user). Evidence of arm64 code generation and JIT correctness, not of
+# arm64 hardware behavior (caches, timing) or of MDWE enforcement, which
+# qemu-user does not model for the guest.
+# Checks: upstream suite with the static baseline; trace_churn checksum equals
+# the host checksum.
+# Usage: tests/zig/arm64-qemu   (inside nix develop; needs qemu-aarch64, zig)
+set -u
+set -o pipefail  # suite output is piped through sed; keep the suite's status
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+command -v qemu-aarch64 >/dev/null || { echo "arm64-qemu: qemu-aarch64 missing (run inside nix develop)"; exit 1; }
+prefix="$root/zig-out/aarch64-linux-musl/ReleaseFast"
+"$root/build" --target aarch64-linux-musl >"$root/.build-work/arm64-qemu-build.log" 2>&1 ||
+	{ echo "arm64-qemu: FAIL build (see .build-work/arm64-qemu-build.log)"; exit 1; }
+wrap="$root/.build-work/luajit-aarch64-qemu"
+printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$(command -v qemu-aarch64)" "$prefix/bin/luajit" >"$wrap"
+chmod +x "$wrap"
+fails=0
+"$root/tests/upstream-suite" --static "$wrap" | sed 's/^/arm64-qemu: /' || fails=$((fails+1))
+want="$(LUA_PATH="$root/src/?.lua;;" "$root/src/luajit" "$root/tests/mdwe/lua/trace_churn.lua" | grep -o 'checksum=.*')"
+got="$(LUA_PATH="$prefix/share/luajit-2.1/?.lua;;" "$wrap" "$root/tests/mdwe/lua/trace_churn.lua" | grep -o 'checksum=.*')"
+if [ -n "$want" ] && [ "$got" = "$want" ]; then echo "arm64-qemu: trace_churn $got matches host"; else echo "arm64-qemu: FAIL trace_churn '$got' != host '$want'"; fails=$((fails+1)); fi
+exit "$fails"

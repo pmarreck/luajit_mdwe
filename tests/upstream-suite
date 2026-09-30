@@ -5,11 +5,16 @@
 # the 2016 suite predates newer library contents (e.g. table.move).
 #   363 lib/contents.lua pre-5.2 math, 365 pre-5.2 string, 366 pre-5.2 table
 # A new failure or a newly passing baseline test both fail this script.
-# Usage: tests/upstream-suite [path/to/luajit]   (run inside nix develop)
+# --static: statically linked binaries additionally fail the four tests that
+# resolve libc symbols through ffi.C (295 err.lua strchr, 345/346 redir.lua
+# strlen/errno, 508 ffi_nosink strchr): "Symbol not found". Verified on a
+# native static x86_64-musl build, so these are not architecture-specific.
+# Usage: tests/upstream-suite [--static] [path/to/luajit]   (run inside nix develop)
 set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-luajit="$(readlink -f "${1:-$root/src/luajit}")"
 baseline="363 365 366"
+if [ "${1:-}" = --static ]; then baseline="295 345 346 363 365 366 508"; shift; fi
+luajit="$(readlink -f "${1:-$root/src/luajit}")"
 [ -n "${LUAJIT_TEST_CLEANUP:-}" ] || { echo "upstream-suite: run inside 'nix develop'" >&2; exit 2; }
 t="$LUAJIT_TEST_CLEANUP/test"
 out="$(cd "$t" && LUA_PATH="$t/?.lua;;" timeout 900 "$luajit" test.lua 2>&1)"

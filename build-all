@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Cross-build the declared target matrix with build.zig; reports each result.
+# Compile/link evidence only: Windows and macOS binaries are not executed here.
+# Does not change the published host entrypoint.
+# Usage: ./build-all [--debug|--safe]
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+targets=(x86_64-linux-gnu aarch64-linux-gnu aarch64-macos x86_64-windows-gnu aarch64-windows-gnu)
+fails=0
+for t in "${targets[@]}"; do
+	if "$root/build" "$@" --target "$t" >"$root/.build-work/build-all-$t.log" 2>&1; then
+		echo "build-all: ok   $t"
+	else
+		echo "build-all: FAIL $t (see .build-work/build-all-$t.log)"; fails=$((fails+1))
+	fi
+done
+exit "$fails"

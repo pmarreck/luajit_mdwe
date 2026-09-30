@@ -3,6 +3,10 @@ ver=1.2
 annotate=[
 	bench = Per-machine benchmark ledgers (ndjson), source-controlled
 	bm = Fork vs pinned-upstream benchmark harness: output check, hyperfine, robust median/MAD ledger
+	build = Build host product via build.zig into zig-out/<triple>/<profile>; publish bin/<os>/<arch>/luajit
+	build-all = Cross-build the 5-target matrix via ./build
+	build.zig = Zig build of LuaJIT mirroring src/Makefile config (lj_arch.h macro probe), host tools, generated headers, lib, CLI
+	build.zig.zon = Zig package manifest (no dependencies)
 	docs/MDWE_RESEARCH.md = MDWE research record: measurements, sources, precedents, backend inventory
 	docs/MDWE_SPEC.md = Technical spec (design R: memfd MAP_FIXED remap) awaiting Grok review
 	docs/UPSTREAM_CANDIDATES.md = Standalone fixes suitable for upstream LuaJIT submission, with evidence
@@ -19,4 +23,6 @@ annotate=[
 	tests/mdwe/sdmdwe_seccomp_exec.c = Launcher replicating systemd's seccomp MemoryDenyWriteExecute fallback filter
 	tests/mdwe/wx_probe.c = W^X strategy probe (mprotect, RWX, memfd dual/remap, procmem, fork isolation)
 	tests/upstream-suite = Runs pinned LuaJIT-test-cleanup suite; requires exact upstream baseline failure set
+	tests/zig/arm64-qemu = Emulated arm64 (static musl under qemu-user) suite + checksum check
+	tests/zig/compare-generated = Differential test: build.zig vs Makefile generated files across 5 targets
 ]

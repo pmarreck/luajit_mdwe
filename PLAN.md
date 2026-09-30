@@ -20,7 +20,7 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] `bm`: ABBA ordering and fork/upstream ratio history gate; proven to trip with `BM_FORK_FLAGS=-joff`. (2026-09-29 21:45 EDT)
 - [x] Fix upstream macOS HRT compile error (void `mcode_setprot` returning 0) with cross-target compile test. (2026-09-29 21:55 EDT)
 
-- [ ] Zig build architecture (Peter, 2026-09-29): `build.zig` + `build.zig.zon` building LuaJIT (minilua, buildvm, generated headers, lib, CLI) alongside upstream Makefile; flake builds via Zig; cross-target matrix.
+- [x] Zig build architecture (Peter, 2026-09-29): `build.zig`/`build.zig.zon` mirroring the Makefile config; flake default builds via Zig; `./build`, `./build-all` (5 targets); differential test vs Makefile (46 identical, mutation-checked); emulated arm64 suite; bm parity with upstream. (2026-09-29 22:20 EDT)
 
 ## Reviewed implementation (blocked on Grok review)
 

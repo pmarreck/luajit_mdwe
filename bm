@@ -11,6 +11,8 @@
 # |delta median| > 3*sqrt(ra^2+rb^2) and > MIN_PCT.
 #
 # Usage: nix develop -c ./bm [--runs N] [--only name] [--no-log]
+# BM_FORK_BIN benchmarks another fork binary (e.g. the build.zig product)
+# instead of the Makefile-built src/luajit.
 # BM_FORK_FLAGS (e.g. "-joff") is passed to the fork only; it exists to prove
 # the gate trips on a real slowdown (use with --no-log).
 # Runs inside a memory-capped systemd --user scope when available.
@@ -53,9 +55,11 @@ if [ ! -x "$updir/src/luajit" ]; then
 	make -s -C "$updir/src" -j16 BUILDMODE=static >"$updir.make.log" 2>&1 ||
 		{ echo "bm: upstream build failed (see $updir.make.log)" >&2; exit 1; }
 fi
-make -s -C "$root/src" -j16 BUILDMODE=static >"$work/fork-make.log" 2>&1 ||
-	{ echo "bm: fork build failed (see $work/fork-make.log)" >&2; exit 1; }
-fork="$root/src/luajit" up="$updir/src/luajit"
+if [ -z "${BM_FORK_BIN:-}" ]; then
+	make -s -C "$root/src" -j16 BUILDMODE=static >"$work/fork-make.log" 2>&1 ||
+		{ echo "bm: fork build failed (see $work/fork-make.log)" >&2; exit 1; }
+fi
+fork="$(readlink -f "${BM_FORK_BIN:-$root/src/luajit}")" up="$updir/src/luajit"
 for b in "$fork" "$up"; do
 	if "$b" -e 'os.exit(0)' 2>&1 | grep -q "DEBUG BUILD"; then echo "bm: debug build refused: $b" >&2; exit 2; fi
 done

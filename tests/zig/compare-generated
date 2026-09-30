@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Differential test: build.zig must derive the same configuration as
+# upstream's src/Makefile. For each target, generate the build-time outputs
+# both ways and require them to be identical:
+#   - Makefile: a scratch copy of the tree, host tools built with the host cc,
+#     TARGET_CC = "zig cc -target T" (the Makefile then probes lj_arch.h with it)
+#   - Zig:      zig build generated -Dtarget=T
+# Compared: lj_{bc,ff,lib,rec,fold}def.h, luajit.h, vmdef.lua, lj_vm.S (or
+# lj_vm.o on Windows) and buildvm_arch.h with DynASM's embedded source paths
+# reduced to basenames. Also checks build.zig's source list against LJCORE_O.
+# Usage: tests/zig/compare-generated [target...]   (inside nix develop)
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+work="$root/.build-work/zig-compare"
+targets=("$@")
+[ ${#targets[@]} -gt 0 ] || targets=(native aarch64-linux-gnu x86_64-windows-gnu aarch64-macos.13.0 x86_64-macos.13.0)
+fails=0 ok=0
+bad() { fails=$((fails+1)); printf '\e[31mFAIL\e[0m %s\n' "$*"; }
+
+# Source list: build.zig core_sources (as a set) must equal Makefile LJCORE_O.
+mk_set="$(awk '/^LJCORE_O=/,/lib_init\.o/' "$root/src/Makefile" | tr -s ' \t\\' '\n' | grep '\.o$' | sed 's/\.o$/.c/' | sort -u)"
+lib_set="$(awk '/^LJLIB_O=/,/lib_buffer\.o/' "$root/src/Makefile" | tr -s ' \t\\' '\n' | grep '\.o$' | sed 's/\.o$/.c/' | sort -u)"
+zig_set="$(awk '/^const core_sources/,/lib_init\.c/' "$root/build.zig" | grep -o '"[a-z_0-9]*\.c"' | tr -d '"' | sort -u)"
+zig_lib="$(awk '/^const lib_sources/,/};/' "$root/build.zig" | grep -o '"[a-z_0-9]*\.c"' | tr -d '"' | sort -u)"
+[ "$(printf '%s\n%s\n' "$mk_set" "$lib_set" | sort -u)" = "$(printf '%s\n%s\n' "$zig_set" "$zig_lib" | sort -u)" ] && ok=$((ok+1)) ||
+	bad "source list differs from Makefile LJCORE_O+LJLIB_O"
+
+norm_arch() { sed -E 's#"[^"]*/(vm_[a-z0-9]+\.dasc)"#"\1"#g; s#"(vm_[a-z0-9]+\.dasc)"#"\1"#g' "$1"; }
+
+for t in "${targets[@]}"; do
+	mk="$work/$t/make" zo="$work/$t/zig"
+	mkdir -p "$mk" "$zo"
+	# Fresh copy of tracked sources (no Makefile outputs).
+	(cd "$root" && git ls-files -z src dynasm | xargs -0 cp --parents -t "$mk" 2>/dev/null)
+	cp "$root/.relver" "$mk/" 2>/dev/null
+	# Same relver as build.zig computes (HEAD committer time) so luajit.h matches.
+	git -C "$root" show -s --format=%ct >"$mk/src/luajit_relver.txt"
+	sys=Linux vm=lj_vm.S
+	case "$t" in
+		*windows*) sys=Windows vm=lj_vm.o ;;
+		*macos*) sys=Darwin ;;
+	esac
+	if [ "$t" = native ]; then
+		tcc="zig cc"; zt=()
+	else
+		tcc="zig cc -target $t"; zt=(-Dtarget="$t")
+	fi
+	gens=(host/buildvm_arch.h luajit.h lj_bcdef.h lj_ffdef.h lj_libdef.h lj_recdef.h lj_folddef.h jit/vmdef.lua "$vm")
+	# GIT_RELVER=: keeps the Makefile from rewriting luajit_relver.txt.
+	if ! MACOSX_DEPLOYMENT_TARGET=13.0 make -s -C "$mk/src" HOST_CC="zig cc" STATIC_CC="$tcc" DYNAMIC_CC="$tcc" \
+		TARGET_LD="$tcc" TARGET_SYS="$sys" GIT_RELVER=: "${gens[@]}" >"$work/$t/make.log" 2>&1; then
+		bad "$t: Makefile generation failed (see $work/$t/make.log)"; continue
+	fi
+	if ! (cd "$root" && zig build generated "${zt[@]}" --prefix "$zo" >"$work/$t/zig.log" 2>&1); then
+		bad "$t: zig build generated failed (see $work/$t/zig.log)"; continue
+	fi
+	for g in "${gens[@]}"; do
+		b="${g##*/}"
+		if [ "$b" = buildvm_arch.h ]; then
+			cmp -s <(norm_arch "$mk/src/$g") <(norm_arch "$zo/generated/$b")
+		else
+			cmp -s "$mk/src/$g" "$zo/generated/$b"
+		fi && ok=$((ok+1)) || bad "$t: $b differs between Makefile and build.zig"
+	done
+done
+echo "compare-generated: $ok identical, $fails failed (targets: ${targets[*]})"
+[ "$fails" -eq 0 ]

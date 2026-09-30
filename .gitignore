@@ -15,3 +15,7 @@
 /.build-work/
 /inbox/
 /.nix-out/
+/zig-out/
+/.zig-cache/
+/zig-pkg/
+/bin/*/

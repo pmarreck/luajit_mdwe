@@ -1,13 +1,29 @@
 #!/usr/bin/env bash
-# Full suite for the luajit_mdwe fork. Builds LuaJIT with upstream's Makefile
-# and runs the MDWE characterization tests. Exit code = failure count (capped).
+# Full suite for the luajit_mdwe fork (run inside nix develop, or it re-enters).
+# 1. Upstream Makefile build (reference): MDWE characterization + upstream suite.
+# 2. build.zig host build: the same two suites against the Zig-built binary.
+# 3. build.zig vs Makefile generated-file differential across targets.
+# 4. Cross-target compile checks and emulated arm64 execution.
+# Exit code = number of failed parts.
 set -u
+set -o pipefail  # suite output is piped through sed; keep the suite's status
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -n "${IN_NIX_SHELL:-}" ] || exec nix develop "$root" -c "$0" "$@"
+mkdir -p "$root/.build-work"
 fails=0
 if ! make -s -C "$root/src" -j16 BUILDMODE=static >"$root/.build-work/make.log" 2>&1; then
-	echo "LuaJIT build failed; see .build-work/make.log"; exit 1
+	echo "LuaJIT Makefile build failed; see .build-work/make.log"; exit 1
 fi
 "$root/tests/mdwe/run" "$root/src/luajit" || fails=$((fails+1))
 "$root/tests/upstream-suite" "$root/src/luajit" || fails=$((fails+1))
+if "$root/build" >"$root/.build-work/zig-build.log" 2>&1; then
+	zl="$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast/bin/luajit"
+	"$root/tests/mdwe/run" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
+	"$root/tests/upstream-suite" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
+else
+	echo "zig build failed; see .build-work/zig-build.log"; fails=$((fails+1))
+fi
+"$root/tests/zig/compare-generated" || fails=$((fails+1))
 "$root/tests/compile/cross-targets" || fails=$((fails+1))
+"$root/tests/zig/arm64-qemu" || fails=$((fails+1))
 exit "$fails"
