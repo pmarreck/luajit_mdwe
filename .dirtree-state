@@ -1,11 +1,14 @@
 # Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
 ver=1.2
 annotate=[
+	docs/MDWE_RESEARCH.md = MDWE research record: measurements, sources, precedents, backend inventory
+	docs/MDWE_SPEC.md = Technical spec (design R: memfd MAP_FIXED remap) awaiting Grok review
 	flake.nix = Pinned research dev shell (gcc, make, hyperfine, strace, gdb)
 	test = Full suite: static LuaJIT build plus MDWE characterization
 	tests/mdwe/flip_bench.c = Per-round cost of mprotect vs MAP_FIXED remap vs dual-alias code updates
 	tests/mdwe/lua/ffi_callback.lua = Exercises FFI callback trampoline page via qsort
 	tests/mdwe/lua/jit_smoke.lua = Forces trace compilation and reports trace count
+	tests/mdwe/lua/trace_churn.lua = Deterministic compile-heavy workload counting compiled/aborted traces
 	tests/mdwe/mdwe_exec.c = Launcher applying kernel PR_SET_MDWE before exec
 	tests/mdwe/run = MDWE characterization suite across none/kernel/seccomp/systemd surfaces
 	tests/mdwe/sdmdwe_seccomp_exec.c = Launcher replicating systemd's seccomp MemoryDenyWriteExecute fallback filter
