@@ -19,7 +19,7 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Peter accepted spec revision 2 (2026-09-30 14:00 EDT).
 - [x] Implement design R (`LUAJIT_SECURITY_MCODE=2`) test-first; T1-T11 pass under none/kernel/seccomp/systemd; fork and P1/P2 audits mutation-checked. (2026-09-30 14:20 EDT)
 - [x] Benchmark `=2` vs `=1`/upstream with layout control: compile-bound +35%, steady state unresolved except possible ~1% on mandelbrot; MAP_POPULATE and range-limited remap measured and rejected. (2026-09-30 14:45 EDT)
-- [ ] Decide with Peter: `=2` default `sizemcode` (16 KB cuts compile overhead to +20%) and whether compile-heavy startup matters for Dune.
+- [x] sizemcode default stays 64 KB (upstream); tuned per application via -Osizemcode / bin/sizemcode-tune (Peter, 2026-09-30 18:50 EDT).
 - [x] Deliver to Dune: flake input, `-Omcoderemap=1` usage, costs and open items (llmsend note to dune_awakening_server). (2026-09-30 16:40 EDT)
 - [ ] arm64 hardware run of `=2` (qemu-user covers functional behavior only).
 - [x] Documented `-Osizemcode=16` tuning knob in README and spec §7 (no default change). (2026-09-30 16:35 EDT)

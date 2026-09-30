@@ -387,8 +387,9 @@ resolved mode effect across layouts (`mandelbrot` +0.6-1.9% in 5/5 layouts is
 a possible small effect). Both reserved optimizations were measured and are
 slower (`MAP_POPULATE` +10 ms; range-limited remapping +15 ms on a 68 ms
 baseline) and were not adopted. The cost scales with `sizemcode`: +20% at
-16 KB, +31% at 64 KB (default), +48% at 256 KB; lowering the default for `=2`
-is a tuning decision left open (larger traces could exceed smaller areas).
+16 KB, +31% at 64 KB (default), +48% at 256 KB; the default stays 64 KB
+(Peter, 2026-09-30): a trace larger than an area cannot compile, so the size
+is tuned per application rather than lowered for everyone.
 
 The runtime parameter on a default build costs the same: with
 `-Omcoderemap=1`, 19 steady-state benchmarks show no change beyond noise
