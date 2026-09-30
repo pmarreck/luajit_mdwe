@@ -20,6 +20,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <pthread.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -208,6 +210,120 @@ static int s_fork_anon(void)
 static int s_fork_dual(void) { return s_fork_isolation(0); }
 static int s_fork_dual_private_rx(void) { return s_fork_isolation(1); }
 
+/* Seal protocol (Grok review, blocker 1): with the only long-lived mapping an
+** RX MAP_SHARED view from an O_RDONLY description of the memfd, F_SEAL_WRITE
+** must succeed, after which pwrite and hole punching fail and the code still
+** runs. Prints "SEALED ..." and exits 0 on the expected behavior. */
+static int s_seal_ro(void)
+{
+	int fd, ro, seals;
+	char path[64];
+	uint8_t *p, *q, b = 0;
+	setenv("WX_MFD", "noexec-seal", 0);
+	if ((fd = memfd_new()) < 0) return refused("memfd_create");
+	p = mmap(NULL, SZ, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) return refused("mmap RW");
+	emit(p, 42);
+	snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);
+	if ((ro = open(path, O_RDONLY|O_CLOEXEC)) < 0) return refused("reopen O_RDONLY");
+	q = mmap(p, SZ, PROT_READ|PROT_EXEC, MAP_SHARED|MAP_FIXED, ro, 0);
+	if (q != p) return refused("MAP_FIXED RX from O_RDONLY");
+	sync_icache(p, 16);
+	if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW)) return refused("F_ADD_SEALS");
+	seals = fcntl(fd, F_GET_SEALS);
+	if (pwrite(fd, &b, 1, 0) != -1 || errno != EPERM) { printf("pwrite NOT refused\n"); return 1; }
+	if (fallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE, 0, 4096) != -1 || errno != EPERM) { printf("punch NOT refused\n"); return 1; }
+	printf("SEALED 0x%x ", seals);
+	return run(p, 42);
+}
+
+/* Counterpart: an RX MAP_SHARED view from the WRITABLE description blocks the seal. */
+static int s_seal_rw_busy(void)
+{
+	int fd;
+	uint8_t *p;
+	setenv("WX_MFD", "noexec-seal", 0);
+	if ((fd = memfd_new()) < 0) return refused("memfd_create");
+	p = mmap(NULL, SZ, PROT_READ|PROT_EXEC, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) return refused("mmap RX");
+	if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE) == 0) { printf("SEALED unexpectedly\n"); return 1; }
+	return refused("F_ADD_SEALS");
+}
+
+/* Parent punches the memfd after fork while the child executes from it. */
+static int s_fork_punch(void)
+{
+	int fd = memfd_new(), st;
+	uint8_t *p;
+	pid_t pid;
+	int pipefd[2];
+	char c;
+	prctl(PR_SET_DUMPABLE, 0L, 0L, 0L, 0L);  /* Child crash expected: no core dump. */
+	if (fd < 0) return refused("memfd_create");
+	p = mmap(NULL, SZ, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	if (p == MAP_FAILED) return refused("mmap RW");
+	emit(p, 42);
+	if (mmap(p, SZ, PROT_READ|PROT_EXEC, MAP_SHARED|MAP_FIXED, fd, 0) != p) return refused("remap RX");
+	sync_icache(p, 16);
+	if (pipe(pipefd)) return refused("pipe");
+	pid = fork();
+	if (pid == 0) {
+		if (read(pipefd[0], &c, 1) != 1) _exit(3);
+		_exit(((fn_t)p)() == 42 ? 0 : 1);
+	}
+	if (fallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE, 0, SZ)) return refused("punch");
+	if (write(pipefd[1], "x", 1) != 1 || waitpid(pid, &st, 0) != pid) return refused("fork");
+	if (WIFSIGNALED(st)) { printf("CHILD KILLED by signal %d\n", WTERMSIG(st)); return 4; }
+	printf("CHILD exit %d\n", WEXITSTATUS(st));
+	return WEXITSTATUS(st) ? 4 : 0;
+}
+
+/* MAP_FIXED replacement atomicity (spec Â§5.3): one thread keeps calling the
+** page while another replaces it RX->RX with MAP_FIXED from the same memfd.
+** A window with no mapping would kill the process. Bounded: 2 threads,
+** WX_ROUNDS replacements (default 20000). Evidence, not proof. */
+static volatile int race_stop;
+static uint8_t *race_page;
+static void *race_exec(void *arg)
+{
+	long n = 0;
+	(void)arg;
+	while (!race_stop) { if (((fn_t)race_page)() != 42) return (void *)1; n++; }
+	return (void *)0;
+}
+static int race_gap;
+static int s_remap_race(void)
+{
+	int fd = memfd_new();
+	long i, rounds = getenv("WX_ROUNDS") ? atol(getenv("WX_ROUNDS")) : 20000;
+	pthread_t th;
+	void *res;
+	if (fd < 0) return refused("memfd_create");
+	race_page = mmap(NULL, SZ, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	if (race_page == MAP_FAILED) return refused("mmap RW");
+	emit(race_page, 42);
+	if (mmap(race_page, SZ, PROT_READ|PROT_EXEC, MAP_SHARED|MAP_FIXED, fd, 0) != race_page) return refused("remap RX");
+	sync_icache(race_page, 16);
+	if (pthread_create(&th, NULL, race_exec, NULL)) return refused("pthread_create");
+	for (i = 0; i < rounds; i++) {
+		if (race_gap && munmap(race_page, SZ)) return refused("munmap");  /* Negative control. */
+		if (mmap(race_page, SZ, PROT_READ|PROT_EXEC, MAP_SHARED|MAP_FIXED, fd, 0) != race_page) return refused("MAP_FIXED RX->RX");
+	}
+	race_stop = 1;
+	pthread_join(th, &res);
+	if (res) { printf("WRONG result during race\n"); return 1; }
+	printf("RACE-OK %ld replacements\n", rounds);
+	return 0;
+}
+
+/* Negative control for remap-race: an explicit munmap gap must be caught. */
+static int s_remap_race_gap(void)
+{
+	prctl(PR_SET_DUMPABLE, 0L, 0L, 0L, 0L);  /* Expected crash: no core dump. */
+	race_gap = 1;
+	return s_remap_race();
+}
+
 /* Re-asserting PROT_EXEC on a mapping that never was writable (no exec gain). */
 static int s_rx_noop(void)
 {
@@ -234,7 +350,7 @@ int main(int argc, char **argv)
 		{ "mprotect", s_mprotect }, { "rwx", s_rwx }, { "dual", s_dual },
 		{ "remap", s_remap }, { "memfd-mprotect", s_memfd_mprotect },
 		{ "procmem", s_procmem }, { "rx-to-rwx", s_rx_to_rwx }, { "rx-noop", s_rx_noop },
-		{ "fork-anon", s_fork_anon }, { "fork-dual", s_fork_dual }, { "fork-dual-private-rx", s_fork_dual_private_rx },
+		{ "fork-anon", s_fork_anon }, { "fork-dual", s_fork_dual }, { "seal-ro", s_seal_ro }, { "remap-race", s_remap_race }, { "remap-race-gap", s_remap_race_gap }, { "seal-rw-busy", s_seal_rw_busy }, { "fork-punch", s_fork_punch }, { "fork-dual-private-rx", s_fork_dual_private_rx },
 	};
 	size_t i;
 	setvbuf(stdout, NULL, _IONBF, 0);

@@ -19,7 +19,7 @@ bad() { fail=$((fail+1)); printf '\e[31mFAIL\e[0m %s\n' "$*"; }
 
 mkdir -p "$bin"
 for t in wx_probe mdwe_exec sdmdwe_seccomp_exec flip_bench; do
-	if ! "$cc" -O2 -Wall -Wextra -Werror -o "$bin/${t//_/-}" "$root/tests/mdwe/$t.c" 2>"$bin/$t.log"; then
+	if ! "$cc" -O2 -Wall -Wextra -Werror -pthread -o "$bin/${t//_/-}" "$root/tests/mdwe/$t.c" 2>"$bin/$t.log"; then
 		bad "compile $t: $(cat "$bin/$t.log")"
 	fi
 done
@@ -84,6 +84,18 @@ for mode in none kernel seccomp systemd; do
 	else
 		expect $mode 0 "OK noop" "$bin/wx-probe" rx-noop
 	fi
+	# Seal protocol (review blocker 1): RX view from an O_RDONLY description can
+	# be write-sealed; one from the writable description cannot (EBUSY).
+	expect $mode 0 "SEALED 0x2e OK 42" "$bin/wx-probe" seal-ro
+	expect $mode 2 "REFUSED F_ADD_SEALS: Device or resource busy" "$bin/wx-probe" seal-rw-busy
+	# A parent hole-punch after fork() destroys the child's code.
+	expect $mode 4 "CHILD KILLED by signal 11" "$bin/wx-probe" fork-punch
+	# MAP_FIXED RX->RX replacement never exposes a gap to an executing thread;
+	# the explicit munmap gap control proves the stress can detect one.
+	expect $mode 0 "RACE-OK 20000 replacements" "$bin/wx-probe" remap-race
+	# (systemd-run reports signal deaths as 255, not 128+sig; the control needs
+	# the exact signal, and the systemd surface is the kernel one here anyway.)
+	[ "$mode" != systemd ] && expect $mode 139 "" "$bin/wx-probe" remap-race-gap
 	# memfd code is shared across fork(), unlike anonymous private code.
 	expect $mode 4 "SHARED parent now runs child code" "$bin/wx-probe" fork-dual
 	expect $mode 4 "SHARED parent now runs child code" "$bin/wx-probe" fork-dual-private-rx
