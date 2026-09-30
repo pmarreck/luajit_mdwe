@@ -12,6 +12,11 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Write `docs/MDWE_RESEARCH.md` and `docs/MDWE_SPEC.md`. (2026-09-29 20:25 EDT)
 - [x] Ask Einstein to start an independent Grok reviewer against the completed spec (request sent 2026-09-29 20:30 EDT).
 - [ ] Resolve Grok review findings (awaiting note in `inbox/`); implementation stays stopped until then.
+- [ ] Watch job running for the review note (started 2026-09-29 21:20 EDT); on arrival, resolve findings, then begin implementation.
+- [x] Pin upstream LuaJIT and LuaJIT-test-cleanup as flake inputs; add `./bm` (fork vs upstream, median/MAD noise gate, memory-capped). (2026-09-29 21:35 EDT)
+- [ ] Track upstream-worthy fixes in `docs/UPSTREAM_CANDIDATES.md`; apply ones that test better (Peter, 2026-09-29).
+- [ ] Fix unchecked mprotect in FFI callback allocation (error instead of SIGSEGV), test-first.
+- [ ] Run the upstream LuaJIT-test-cleanup suite from `./test`.
 
 ## Reviewed implementation (blocked on Grok review)
 

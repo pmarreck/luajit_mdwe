@@ -1,5 +1,39 @@
 {
   "nodes": {
+    "luajit-test-cleanup": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1476912423,
+        "narHash": "sha256-qn4FLyBu5py8fpXszEUdvsU6I70yDMSIYUvCZE28n78=",
+        "owner": "LuaJIT",
+        "repo": "LuaJIT-test-cleanup",
+        "rev": "014708bceb70550a3ab8d539cff14d9085ca9cb8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "LuaJIT",
+        "repo": "LuaJIT-test-cleanup",
+        "rev": "014708bceb70550a3ab8d539cff14d9085ca9cb8",
+        "type": "github"
+      }
+    },
+    "luajit-upstream": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788856981,
+        "narHash": "sha256-nO93951MbMBl4Z4BHbcIk3oFCRzeKU2mjbxfeM64TnA=",
+        "owner": "LuaJIT",
+        "repo": "LuaJIT",
+        "rev": "c6ffc141a8762b41703f9287d63d93622a13dd8f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "LuaJIT",
+        "repo": "LuaJIT",
+        "rev": "c6ffc141a8762b41703f9287d63d93622a13dd8f",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790578696,
@@ -18,6 +52,8 @@
     },
     "root": {
       "inputs": {
+        "luajit-test-cleanup": "luajit-test-cleanup",
+        "luajit-upstream": "luajit-upstream",
         "nixpkgs": "nixpkgs"
       }
     }

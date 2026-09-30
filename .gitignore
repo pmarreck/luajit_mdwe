@@ -14,3 +14,4 @@
 # luajit_mdwe research/build outputs
 /.build-work/
 /inbox/
+/.nix-out/

@@ -1,6 +1,8 @@
 # Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
 ver=1.2
 annotate=[
+	bench = Per-machine benchmark ledgers (ndjson), source-controlled
+	bm = Fork vs pinned-upstream benchmark harness: output check, hyperfine, robust median/MAD ledger
 	docs/MDWE_RESEARCH.md = MDWE research record: measurements, sources, precedents, backend inventory
 	docs/MDWE_SPEC.md = Technical spec (design R: memfd MAP_FIXED remap) awaiting Grok review
 	flake.nix = Pinned research dev shell (gcc, make, hyperfine, strace, gdb)
