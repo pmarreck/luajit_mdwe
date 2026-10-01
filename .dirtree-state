@@ -42,4 +42,5 @@ annotate=[
 	tests/upstream-suite = Runs pinned LuaJIT-test-cleanup suite; requires exact upstream baseline failure set
 	tests/zig/arm64-qemu = Emulated arm64 (static musl under qemu-user) suite + checksum check
 	tests/zig/compare-generated = Differential test: build.zig vs Makefile generated files across 5 targets
+	tests/zig/host-interp = Checks the host build requests the host's ELF interpreter (stock NixOS without nix-ld)
 ]

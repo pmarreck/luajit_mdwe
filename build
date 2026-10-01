@@ -35,7 +35,10 @@ prefix="$root/zig-out/$triple/$variant"
 
 # Baseline CPU for host builds too: portable, and what upstream's Makefile
 # compiles with (gcc default), so ReleaseFast comparisons stay like-for-like.
-zig_args=(build --prefix "$prefix" -Doptimize="$profile" -Dtarget="$triple" -Dcpu=baseline ${mcode:+-Dsecurity-mcode=$mcode} "${extra[@]}")
+# Host builds use the native target so Zig picks the host's own ELF interpreter
+# (a Nix store path on NixOS); an explicit triple would ask for the generic
+# /lib path, which stock NixOS cannot run (tests/zig/host-interp).
+zig_args=(build --prefix "$prefix" -Doptimize="$profile" -Dtarget="${target:-native}" -Dcpu=baseline ${mcode:+-Dsecurity-mcode=$mcode} "${extra[@]}")
 if [ -n "${IN_NIX_SHELL:-}" ]; then
 	(cd "$root" && zig "${zig_args[@]}") || exit 1
 else

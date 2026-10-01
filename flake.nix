@@ -84,6 +84,7 @@
 				default = pkgs.mkShell {
 					packages = with pkgs; [
 						gnumake
+						git  # relver for Makefile builds (tests/zig/compare-generated)
 						hyperfine
 						coreutils
 						jq

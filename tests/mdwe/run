@@ -57,6 +57,8 @@ expect() {
 # systemd's seccomp filter answers EPERM; kernel PR_SET_MDWE answers EACCES.
 # systemd >= v254 uses PR_SET_MDWE when the kernel has it, so its column
 # matches "kernel" on Linux >= 6.3.
+case "$(uname -m)" in aarch64|arm64) punch_sig=4 ;; *) punch_sig=11 ;; esac
+
 for mode in none kernel seccomp systemd; do
 	case "$mode" in
 		none) deny= ;;
@@ -90,8 +92,10 @@ for mode in none kernel seccomp systemd; do
 	expect $mode 2 "REFUSED F_ADD_SEALS: Device or resource busy" "$bin/wx-probe" seal-rw-busy
 	# Same without /proc: a MAP_PRIVATE RX view does not count as writable.
 	expect $mode 0 "SEALED 0x2e OK 42" "$bin/wx-probe" seal-private
-	# A parent hole-punch after fork() destroys the child's code.
-	expect $mode 4 "CHILD KILLED by signal 11" "$bin/wx-probe" fork-punch
+	# A parent hole-punch after fork() destroys the child's code. The punched
+	# page reads as zeros: a null memory access on x86 (SIGSEGV), the permanently
+	# undefined instruction udf #0 on arm64 (SIGILL).
+	expect $mode 4 "CHILD KILLED by signal $punch_sig" "$bin/wx-probe" fork-punch
 	# MAP_FIXED RX->RX replacement never exposes a gap to an executing thread;
 	# the explicit munmap gap control proves the stress can detect one.
 	expect $mode 0 "RACE-OK 20000 replacements" "$bin/wx-probe" remap-race

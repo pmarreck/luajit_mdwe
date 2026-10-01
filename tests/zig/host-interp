@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# A host build must use the host's own ELF interpreter (the one /usr/bin/env
+# uses, which is how Zig detects the native dynamic linker). Otherwise it
+# cannot start on stock NixOS without nix-ld (seen on an aarch64 NixOS VM:
+# "Could not start dynamically linked executable").
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+interp() { readelf -l "$1" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p'; }
+[ -e /usr/bin/env ] || { echo "host-interp: skipped (no /usr/bin/env)"; exit 0; }
+want="$(interp "$(readlink -f /usr/bin/env)")"
+[ -n "$want" ] || { echo "host-interp: skipped (/usr/bin/env is not dynamic ELF)"; exit 0; }
+bin="$(readlink -f "$root/bin/$(uname -s | tr '[:upper:]' '[:lower:]')/$(uname -m)/luajit")"
+got="$(interp "$bin")"
+if [ "$got" = "$want" ]; then echo "host-interp: ok ($got)"; exit 0; fi
+echo "host-interp: FAIL $bin requests '$got', host uses '$want'"; exit 1

@@ -18,6 +18,7 @@ fi
 "$root/tests/upstream-suite" "$root/src/luajit" || fails=$((fails+1))
 if "$root/build" >"$root/.build-work/zig-build.log" 2>&1; then
 	zl="$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast/bin/luajit"
+	"$root/tests/zig/host-interp" || fails=$((fails+1))
 	"$root/tests/mdwe/run" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
 	"$root/tests/upstream-suite" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
 	# Default build with the memfd allocator enabled at runtime (-Omcoderemap=1).
