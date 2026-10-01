@@ -21,15 +21,14 @@ Research-first fork of LuaJIT v2.1. Purpose and constraints: `INTENT.md`.
 - [x] Benchmark `=2` vs `=1`/upstream with layout control: compile-bound +35%, steady state unresolved except possible ~1% on mandelbrot; MAP_POPULATE and range-limited remap measured and rejected. (2026-09-30 14:45 EDT)
 - [x] sizemcode default stays 64 KB (upstream); tuned per application via -Osizemcode / bin/sizemcode-tune (Peter, 2026-09-30 18:50 EDT).
 - [x] Deliver to Dune: flake input, `-Omcoderemap=1` usage, costs and open items (llmsend note to dune_awakening_server). (2026-09-30 16:40 EDT)
-- [ ] arm64 hardware run of `=2` (qemu-user covers functional behavior only).
+- [x] arm64 hardware run: full ./test green in a linux-builder VM on the M4 Max (=2 and runtime flag, T1-T11 56/56 each). Found and fixed: host builds requested the generic /lib loader (stock NixOS cannot run them); fork-punch signal is SIGILL on arm64. VM stopped; its dir kept on the Mac (6.1 GB). (2026-09-30 21:40 EDT)
 - [x] Documented `-Osizemcode=16` tuning knob in README and spec §7 (no default change). (2026-09-30 16:35 EDT)
 - [x] `bin/sizemcode-tune` autotune script (trace_churn: 8 KB fastest, 64 KB +21%). (2026-09-30 16:35 EDT)
 - [x] Fixed ./bm ratio gate pairing the previous fork row with another variant's upstream row (tests/bm/prev-pair). (2026-09-30 16:20 EDT)
 - [x] Runtime switch: JIT param `mcoderemap` (`-Omcoderemap=1`, `jit.opt.start`) on every Linux build; default 1 only for =2; latched per empty area chain; callback page follows it. r_mode runtime 56/56, =2 56/56, arm64 qemu, no-JIT FFI build ok; bm: default build = upstream on 20/20, flag: steady-state same, trace_churn +45%. (2026-09-30 16:35 EDT)
 - [x] README "About this fork" section and GitHub repo description set. (2026-09-30 16:40 EDT)
 - [x] Pushed a1d1ff3f and notified dune_awakening_server for its flake. (2026-09-30 16:40 EDT)
-- [ ] Hold M4 Max VM work until Peter says the Hyperspace dedup run is finished (disk at 97%) (Peter, 2026-09-30).
-- [ ] Use the M4 Max MacBook Pro (tailscale, nix) as a remote dev/test machine: native macOS runs (incl. hardened-runtime JIT), and arm64 Linux via its builder VM if present (Peter, 2026-09-30).
+- [x] M4 Max used for native macOS (HRT) runs and the arm64 Linux VM. (2026-09-30)
 - [x] macOS on the M4 Max: native suite 505/508; HRT build fails upstream (candidate 2) and callbacks SIGBUS (candidate 3, fixed, tests/macos). (2026-09-30 15:55 EDT)
 - [x] Pin upstream LuaJIT and LuaJIT-test-cleanup as flake inputs; add `./bm` (fork vs upstream, median/MAD noise gate, memory-capped). (2026-09-29 21:35 EDT)
 - [ ] Track upstream-worthy fixes in `docs/UPSTREAM_CANDIDATES.md`; apply ones that test better (Peter, 2026-09-29; ongoing).

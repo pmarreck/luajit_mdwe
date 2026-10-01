@@ -455,8 +455,12 @@ script.
 
 ## 9. Untested targets and open items
 
-- arm64 Linux: cache coherence across remap, `MAP_FIXED` behavior with 16K/64K
-  pages, pointer authentication (`mcauth`). No arm64 Linux execution yet.
+- arm64 Linux: executed 2026-09-30 on Apple M4 Max hardware (nixpkgs
+  `darwin.linux-builder` VM under HVF: Linux 6.18.41 aarch64, 1 vCPU, 4K
+  pages). Full `./test` passes, including T1-T11 for `=2` and for
+  `-Omcoderemap=1` under kernel, seccomp and systemd MDWE (56/56 each), so
+  cache maintenance across remaps holds there. Still untested: 16K/64K page
+  kernels and pointer authentication (`mcauth`).
 - 32-bit ARM, PPC, MIPS, x86: not executed; `=2` should build on them if
   Linux, but correctness is unclaimed and they are not supported until
   executed. Where `SHMLBA` exceeds the page size (32-bit ARM, MIPS), shared
