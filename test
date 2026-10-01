@@ -16,6 +16,7 @@ if ! make -s -C "$root/src" -j16 BUILDMODE=static >"$root/.build-work/make.log" 
 fi
 "$root/tests/mdwe/run" "$root/src/luajit" || fails=$((fails+1))
 "$root/tests/upstream-suite" "$root/src/luajit" || fails=$((fails+1))
+"$root/tests/mdwe/tsan-fork" || fails=$((fails+1))
 if "$root/build" >"$root/.build-work/zig-build.log" 2>&1; then
 	zl="$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast/bin/luajit"
 	"$root/tests/zig/host-interp" || fails=$((fails+1))

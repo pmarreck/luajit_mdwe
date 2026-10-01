@@ -92,6 +92,8 @@ Fix: use thread-local ownership information to detect a fork initiated by the co
 
 Attribution: introduced by the fork's process-wide remap registry.
 
+Resolution (2026-10-01): fixed. A thread-local `mc_held` count of contexts this thread has locked replaces the shared `owner`/`owned` fields; the prepare handler reads only its own thread's count, then locks each context before touching it. Test: `tests/mdwe/tsan-fork` rebuilds `lj_mcode.o` with ThreadSanitizer and runs the new `embed-fork forkloop` mode (1,000 forks while another thread compiles, memfd allocator on); in `./test`. Before the fix it reported the race at `mc_prepare` (exit 66); after, clean.
+
 ### Inconsistent or incomplete functionality
 
 #### R4. WARNING: Mode 2 loses callback remapping when the JIT is compiled out

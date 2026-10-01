@@ -259,8 +259,6 @@ typedef struct MCodeExtent {
 typedef struct MCodeCtx {
   struct MCodeCtx *next;	/* Process-wide registry for fork handling. */
   pthread_mutex_t lock;	/* Held while any area is writable or the file mutates. */
-  pthread_t owner;
-  volatile int owned;
   int depth;		/* Nesting of lock holders in the owning thread. */
   int fd;		/* Current memfd. */
   int sealed;		/* Write-sealed by a fork(): re-home before mutating. */
@@ -275,6 +273,9 @@ static pthread_mutex_t mc_reglock = PTHREAD_MUTEX_INITIALIZER;
 static MCodeCtx *mc_registry;
 static pthread_once_t mc_once = PTHREAD_ONCE_INIT;
 static int mc_atfork_ok;
+/* Contexts whose lock this thread holds. Read only by this same thread (in
+** the fork prepare handler), so no other thread's state is read unlocked. */
+static __thread int mc_held;
 
 /* Failures inside fork handlers: no lua_State is safe to use there. */
 static LJ_NORET void mc_forkfail(const char *what)
@@ -290,10 +291,10 @@ static LJ_NORET void mc_forkfail(const char *what)
 static void mc_prepare(void)
 {
   MCodeCtx *c;
+  if (mc_held)  /* Locking our own context below would deadlock. */
+    mc_forkfail("fork() called while this thread is generating machine code");
   pthread_mutex_lock(&mc_reglock);
   for (c = mc_registry; c; c = c->next) {
-    if (c->owned && pthread_equal(c->owner, pthread_self()))
-      mc_forkfail("fork() called while this thread is generating machine code");
     pthread_mutex_lock(&c->lock);
     if (!c->sealed) {
       if (fcntl(c->fd, F_ADD_SEALS, MC_SEALS))
@@ -380,8 +381,7 @@ static void mc_begin(jit_State *J, MCodeCtx *c, int rehome)
 {
   if (c->depth++ == 0) {
     pthread_mutex_lock(&c->lock);
-    c->owner = pthread_self();
-    c->owned = 1;
+    mc_held++;
   }
   if (rehome && c->sealed) mc_rehome(J, c);
 }
@@ -389,7 +389,7 @@ static void mc_begin(jit_State *J, MCodeCtx *c, int rehome)
 static void mc_end(MCodeCtx *c)
 {
   if (--c->depth == 0) {
-    c->owned = 0;
+    mc_held--;
     pthread_mutex_unlock(&c->lock);
   }
 }

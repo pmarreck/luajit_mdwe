@@ -39,6 +39,7 @@ annotate=[
 	tests/mdwe/r_mode = Acceptance tests T1-T11 for the memfd allocator; 'runtime' arg drives a default build with -Omcoderemap=1
 	tests/mdwe/run = MDWE characterization suite across none/kernel/seccomp/systemd surfaces
 	tests/mdwe/sdmdwe_seccomp_exec.c = Launcher replicating systemd's seccomp MemoryDenyWriteExecute fallback filter
+	tests/mdwe/tsan-fork = ThreadSanitizer check of the fork prepare handler: 1000 forks while another thread compiles (review R2)
 	tests/mdwe/wx_probe.c = W^X strategy probe (mprotect, RWX, memfd dual/remap, procmem, fork isolation)
 	tests/upstream-suite = Runs pinned LuaJIT-test-cleanup suite; requires exact upstream baseline failure set
 	tests/zig/arm64-qemu = Emulated arm64 (static musl under qemu-user) suite + checksum check

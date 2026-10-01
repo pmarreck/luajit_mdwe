@@ -6,6 +6,8 @@
 ** code must be UNCHANGED.
 **
 ** Usage: embed-fork fork    expect "UNCHANGED" (exit 0)
+**        embed-fork forkloop  1000 ordinary forks while the thread compiles
+**                             (review R2: run with ThreadSanitizer).
 **        embed-fork clone   raw clone(SIGCHLD): bypasses pthread_atfork, so
 **                           the documented residual shows as "CHANGED".
 ** Bounded: one extra thread, fixed trace counts. No sleeps: pipe handshakes
@@ -136,6 +138,18 @@ int main(int argc, char **argv)
 	if (pipe(ready) || pipe(go)) return 3;
 	if (pthread_create(&th, NULL, compiler, NULL)) return 3;
 	while (atomic_load(&compiled) < 50) sched_yield();
+	if (argc > 1 && !strcmp(argv[1], "forkloop")) {
+		int i;
+		for (i = 0; i < 1000; i++) {
+			pid = fork();
+			if (pid == 0) _exit(0);
+			if (pid < 0 || waitpid((pid_t)pid, &st, 0) < 0 || st != 0) { printf("forkloop: FAIL at %d\n", i); return 1; }
+		}
+		atomic_store(&stop, 1);
+		pthread_join(th, NULL);
+		printf("forkloop: 1000 ok\n");
+		return 0;
+	}
 	if (use_clone)
 		pid = syscall(SYS_clone, (unsigned long)SIGCHLD, 0UL, 0UL, 0UL, 0UL);
 	else

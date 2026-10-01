@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Review R2: the fork handler must not race the compiling thread. Rebuilds
+# lj_mcode.o with ThreadSanitizer into a private copy of the Makefile build's
+# libluajit.a, then forks 1000 times while another thread compiles with the
+# memfd allocator on. Any ThreadSanitizer report fails (its exit code 66).
+# Usage: tests/mdwe/tsan-fork   (inside nix develop, after the Makefile build)
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+w="$root/.build-work/tsan"
+mkdir -p "$w"
+[ -f "$root/src/libluajit.a" ] || { echo "tsan-fork: FAIL no src/libluajit.a (run the Makefile build)"; exit 1; }
+cp "$root/src/libluajit.a" "$w/libluajit.a"
+cc -fsanitize=thread -O1 -g -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -U_FORTIFY_SOURCE \
+	-fno-stack-protector -I"$root/src" -c "$root/src/lj_mcode.c" -o "$w/lj_mcode.o" 2>"$w/cc.log" &&
+	ar r "$w/libluajit.a" "$w/lj_mcode.o" 2>>"$w/cc.log" &&
+	cc -fsanitize=thread -O1 -g -pthread -I"$root/src" -o "$w/embed-fork-tsan" \
+		"$root/tests/mdwe/embed_fork.c" "$w/libluajit.a" -lm -ldl 2>>"$w/cc.log" ||
+	{ echo "tsan-fork: FAIL build"; cat "$w/cc.log"; exit 1; }
+out="$(LJ_EMBED_JITOPT=mcoderemap=1 TSAN_OPTIONS=halt_on_error=1 "$w/embed-fork-tsan" forkloop 2>&1)"; rc=$?
+if [ "$rc" = 0 ] && [[ "$out" == *"forkloop: 1000 ok"* ]] && [[ "$out" != *ThreadSanitizer* ]]; then
+	echo "tsan-fork: ok (1000 forks, no ThreadSanitizer report)"; exit 0
+fi
+echo "tsan-fork: FAIL rc=$rc"; printf '%s\n' "$out" | grep -E "ThreadSanitizer|#[0-9] |forkloop" | head -12; exit 1
