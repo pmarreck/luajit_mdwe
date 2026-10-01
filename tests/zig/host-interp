@@ -11,5 +11,8 @@ want="$(interp "$(readlink -f /usr/bin/env)")"
 [ -n "$want" ] || { echo "host-interp: skipped (/usr/bin/env is not dynamic ELF)"; exit 0; }
 bin="$(readlink -f "$root/bin/$(uname -s | tr '[:upper:]' '[:lower:]')/$(uname -m)/luajit")"
 got="$(interp "$bin")"
-if [ "$got" = "$want" ]; then echo "host-interp: ok ($got)"; exit 0; fi
+# Same loader family: identical path, or both in the Nix store (the dev shell's
+# glibc may differ from the system's), and the requested loader must exist.
+case "$want" in /nix/store/*) ok=0; case "$got" in /nix/store/*) ok=1 ;; esac ;; *) ok=0; [ "$got" = "$want" ] && ok=1 ;; esac
+if [ "$ok" = 1 ] && [ -e "$got" ]; then echo "host-interp: ok ($got)"; exit 0; fi
 echo "host-interp: FAIL $bin requests '$got', host uses '$want'"; exit 1
