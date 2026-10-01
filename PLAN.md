@@ -57,7 +57,7 @@ Keep the JIT but close the memfd-to-executable route that MDWE leaves open. Same
 
 ## Code review fixes (CODE_REVIEW.md, Codex 2026-10-01; Peter approved order 2026-10-01)
 
-- [ ] R1 OOM during area commit exits host: prepare metadata before publishing; separate capacities; allocator-failure test.
+- [x] R1 OOM during area commit: mc_reserve before publishing; separate capacities; tests/mdwe/embed_oom.c allocation-failure sweep in r_mode. (2026-10-01 19:55 EDT)
 - [ ] R2 fork ownership data race: thread-local owner flag, lock before reading; TSan repeated-fork test.
 - [ ] R4 =2 with JIT compiled out: reject with #error; narrow README.
 - [ ] R5 failed hole punch retains storage: check result; close empty memfd.

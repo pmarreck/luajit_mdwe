@@ -32,7 +32,7 @@ mkdir -p "$bin"
 for t in mdwe_exec sdmdwe_seccomp_exec; do
 	[ -x "$bin/${t//_/-}" ] || cc -O2 -Wall -Werror -o "$bin/${t//_/-}" "$root/tests/mdwe/$t.c" || bad "compile $t"
 done
-for t in embed_fork embed_stress; do
+for t in embed_fork embed_stress embed_oom; do
 	cc -O2 -Wall -Wextra -Werror -pthread -I"$prefix/include/luajit-2.1" -o "$bin/${t//_/-}-mcode2" \
 		"$root/tests/mdwe/$t.c" "$prefix/lib/libluajit-5.1.a" -lm -ldl 2>"$bin/$t.log" || bad "compile $t: $(cat "$bin/$t.log")"
 done
@@ -89,6 +89,11 @@ for mode in none kernel seccomp; do
 	expect $mode 0 "stress: threads=8 rounds=200 ok" "$bin/embed-stress-mcode2"                 # T7
 done
 expect none 4 "CHANGED" "$bin/embed-fork-mcode2" clone                                         # T5d residual
+# R1 (CODE_REVIEW.md): an allocation failure at any point while compiling,
+# including area and metadata allocation, must leave the host running.
+for mode in none kernel; do
+	expect $mode 0 "warm=" "$bin/embed-oom-mcode2"
+done
 
 # T6 (P1): mechanical syscall audit of =2 runs.
 audit="$(for s in jit_smoke ffi_callback trace_churn cross_area fork_isolation; do

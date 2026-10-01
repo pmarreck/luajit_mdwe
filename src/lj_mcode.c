@@ -267,7 +267,8 @@ typedef struct MCodeCtx {
   off_t fsize;
   MCodeArea *area;	/* Registered areas; also the MAP_FIXED guard. */
   MCodeExtent *ext;	/* Punched extents available for reuse. */
-  MSize narea, nextent, cap;	/* narea + nextent <= cap for both arrays. */
+  MSize narea, nextent;
+  MSize acap, ecap;	/* Capacities: narea <= acap, narea + nextent <= ecap. */
 } MCodeCtx;
 
 static pthread_mutex_t mc_reglock = PTHREAD_MUTEX_INITIALIZER;
@@ -404,20 +405,34 @@ static MCodeArea *mc_find(jit_State *J, MCodeCtx *c, void *p, size_t sz)
   return NULL;
 }
 
-/* Back an accepted reservation with the memfd, mapped RW. */
-static void mc_area_commit(jit_State *J, MCode *p, size_t sz)
+/* Make every fallible Lua allocation for one more area (context, area and
+** extent slots) before the area is published, so an out-of-memory error
+** unwinds with J unchanged. Each array has its own capacity, so a failure
+** between the two reallocations leaves both sizes correct.
+*/
+static void mc_reserve(jit_State *J)
 {
   MCodeCtx *c = mc_ctx(J);
+  if (c->narea + 1 > c->acap) {
+    MSize n = c->acap ? 2*c->acap : 8;
+    c->area = (MCodeArea *)lj_mem_realloc(J->L, c->area,
+      c->acap*sizeof(MCodeArea), n*sizeof(MCodeArea));
+    c->acap = n;
+  }
+  if (c->narea + c->nextent + 1 > c->ecap) {
+    MSize n = c->ecap ? 2*c->ecap : 8;
+    c->ext = (MCodeExtent *)lj_mem_realloc(J->L, c->ext,
+      c->ecap*sizeof(MCodeExtent), n*sizeof(MCodeExtent));
+    c->ecap = n;
+  }
+}
+
+/* Back an accepted reservation with the memfd, mapped RW (after mc_reserve). */
+static void mc_area_commit(jit_State *J, MCode *p, size_t sz)
+{
+  MCodeCtx *c = J->mcctx;
   off_t ofs;
   MSize i;
-  if (c->narea + c->nextent + 1 > c->cap) {  /* Grow before taking the lock. */
-    MSize ncap = c->cap ? 2*c->cap : 8;
-    c->area = (MCodeArea *)lj_mem_realloc(J->L, c->area,
-      c->cap*sizeof(MCodeArea), ncap*sizeof(MCodeArea));
-    c->ext = (MCodeExtent *)lj_mem_realloc(J->L, c->ext,
-      c->cap*sizeof(MCodeExtent), ncap*sizeof(MCodeExtent));
-    c->cap = ncap;
-  }
   mc_begin(J, c, 1);  /* Held while the new area is writable. */
   for (i = 0; i < c->nextent; i++)
     if (c->ext[i].sz == sz) break;
@@ -487,8 +502,8 @@ void lj_mcode_freestate(jit_State *J)
   pthread_mutex_unlock(&mc_reglock);
   close(c->fd);
   pthread_mutex_destroy(&c->lock);
-  lj_mem_free(J2G(J), c->area, c->cap*sizeof(MCodeArea));
-  lj_mem_free(J2G(J), c->ext, c->cap*sizeof(MCodeExtent));
+  lj_mem_free(J2G(J), c->area, c->acap*sizeof(MCodeArea));
+  lj_mem_free(J2G(J), c->ext, c->ecap*sizeof(MCodeExtent));
   lj_mem_free(J2G(J), c, sizeof(MCodeCtx));
   J->mcctx = NULL;
 }
@@ -689,6 +704,10 @@ static void mcode_allocarea(jit_State *J)
 #if LJ_MCODE_REMAP
   if (!oldarea)  /* Mode can only change while no area exists. */
     J->mcremap = J->param[JIT_P_mcoderemap] != 0;
+#endif
+#if LJ_MCODE_REMAP
+  if (J->mcremap)
+    mc_reserve(J);  /* May throw LUA_ERRMEM: nothing is published yet. */
 #endif
   J->mcarea = (MCode *)mcode_alloc(J, sz);
 #if LJ_MCODE_REMAP

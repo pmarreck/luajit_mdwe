@@ -22,6 +22,7 @@ annotate=[
 	tests/macos/hrt = macOS hardened-runtime (MAP_JIT) build, sign, JIT/callback/suite checks; runs on a Mac
 	tests/macos/remote = Sync working tree to a Mac over ssh and run native + HRT checks there
 	tests/mdwe/embed_fork.c = C harness: fork/raw clone while another thread compiles; child checks its code bytes
+	tests/mdwe/embed_oom.c = Allocation-failure sweep: fails each Lua allocation in turn while compiling; host must survive (review R1)
 	tests/mdwe/embed_stress.c = C harness: 8-thread multi-lua_State JIT stress with -joff cross-check
 	tests/mdwe/exec_bench.c = Executes identical code from anon vs memfd private/shared RX pages (icache cost of backing)
 	tests/mdwe/flip_bench.c = Per-round cost of mprotect vs MAP_FIXED remap vs dual-alias code updates

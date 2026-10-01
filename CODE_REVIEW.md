@@ -45,6 +45,8 @@ Fix: prepare fallible metadata before publishing the reservation, or provide com
 
 Attribution: introduced by the fork. Upstream had no Lua heap allocation between successful OS reservation and code-area initialization.
 
+Resolution (2026-10-01): fixed. `mc_reserve` makes the context and both array allocations before `mcode_alloc` publishes the area, and the arrays have separate capacities (`acap`, `ecap`). Test: `tests/mdwe/embed_oom.c` fails each Lua allocation in turn (k = 1, 2, ...) in a forked child, cold and with live traces and small areas that grow past the initial capacity; every child must survive, recover and close. Wired into `tests/mdwe/r_mode` (none and kernel MDWE). Unfixed code panics at k=30; fixed code survives all 531 cold and 536 warm points.
+
 #### R5. WARNING: Failed hole punching silently retains freed code storage
 
 Location: `src/lj_mcode.c:450`, with extent recycling immediately afterwards.
