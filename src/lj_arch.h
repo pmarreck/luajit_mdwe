@@ -768,6 +768,10 @@ extern void *LJ_WIN_LOADLIBA(const char *path);
 #if LUAJIT_SECURITY_MCODE == 2 && !LJ_TARGET_LINUX
 #error "LUAJIT_SECURITY_MCODE=2 (RW^X by memfd remapping) requires Linux"
 #endif
+#if LUAJIT_SECURITY_MCODE == 2 && !LJ_HASJIT
+/* The memfd callback page is selected by the JIT parameter mcoderemap. */
+#error "LUAJIT_SECURITY_MCODE=2 requires the JIT (do not combine with LUAJIT_DISABLE_JIT)"
+#endif
 /* memfd remapping backend, selected at runtime by the JIT param mcoderemap
 ** (default on only for LUAJIT_SECURITY_MCODE=2). */
 #if LJ_TARGET_LINUX && LJ_HASJIT && LUAJIT_SECURITY_MCODE != 0

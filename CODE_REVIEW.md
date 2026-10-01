@@ -108,6 +108,8 @@ Fix: separate callback-backend availability from trace-compiler availability and
 
 Attribution: incomplete fork configuration support. Upstream's callback inability under MDWE is inherited; the new mode reports remapping without providing it in this configuration.
 
+Resolution (2026-10-01): rejected rather than implemented, to keep the change minimal. `src/lj_arch.h` now fails the build with `#error "LUAJIT_SECURITY_MCODE=2 requires the JIT"` when combined with `LUAJIT_DISABLE_JIT`; the README says so and limits the runtime switch to JIT-enabled builds. Test: `tests/compile/cross-targets` requires that refusal and, as a control, that `=2` with the JIT compiles.
+
 ### Build and installation configuration
 
 #### R3. WARNING: Installed Zig/Nix binaries cannot find their own Lua modules

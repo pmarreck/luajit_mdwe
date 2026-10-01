@@ -39,5 +39,16 @@ for t in aarch64-macos.13.0 x86_64-windows-gnu; do
 		echo "cross-targets: FAIL =2 did not refuse $t"; fails=$((fails+1))
 	fi
 done
-[ "$fails" -eq 0 ] && echo "cross-targets: $n checks clean (macOS HRT/plain, Windows x86_64/aarch64; =2 refused off Linux)"
+# Review R4: =2 without the JIT would lose its memfd callback page, so it must
+# refuse to build; =2 with the JIT (control) must compile.
+for jit in "-DLUAJIT_DISABLE_JIT" ""; do
+	n=$((n+1))
+	out="$(cd "$root/src" && zig cc -target x86_64-linux-gnu -c -o "$obj" -DLUAJIT_SECURITY_MCODE=2 $jit -I. lj_ccallback.c 2>&1)"; rc=$?
+	if [ -n "$jit" ]; then
+		[ "$rc" -ne 0 ] && [[ "$out" == *"LUAJIT_SECURITY_MCODE=2 requires the JIT"* ]] || { echo "cross-targets: FAIL =2 with LUAJIT_DISABLE_JIT did not refuse"; fails=$((fails+1)); }
+	else
+		[ "$rc" -eq 0 ] || { echo "cross-targets: FAIL =2 with the JIT did not compile"; printf '%s\n' "$out" | head -5; fails=$((fails+1)); }
+	fi
+done
+[ "$fails" -eq 0 ] && echo "cross-targets: $n checks clean (macOS HRT/plain, Windows x86_64/aarch64; =2 refused off Linux and without the JIT)"
 exit "$fails"

@@ -59,7 +59,7 @@ Keep the JIT but close the memfd-to-executable route that MDWE leaves open. Same
 
 - [x] R1 OOM during area commit: mc_reserve before publishing; separate capacities; tests/mdwe/embed_oom.c allocation-failure sweep in r_mode. (2026-10-01 19:55 EDT)
 - [x] R2 fork ownership race: thread-local mc_held; tests/mdwe/tsan-fork (TSan, 1000 forks) in ./test. (2026-10-01 19:58 EDT)
-- [ ] R4 =2 with JIT compiled out: reject with #error; narrow README.
+- [x] R4 =2 without the JIT now refused at compile time (#error); README narrowed; cross-targets checks. (2026-10-01 20:05 EDT)
 - [ ] R5 failed hole punch retains storage: check result; close empty memfd.
 - [ ] R3/R11/A6 build: LUA_ROOT from prefix; build-all mkdir; reject passthrough --prefix.
 - [ ] R6 R7 R8 R9 R12 R10 A3 A4 test fixes.

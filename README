@@ -14,14 +14,15 @@ call adds PROT_EXEC, so the W^X guarantee is preserved, not bypassed. fork()
 is handled by write-sealing the file and moving each process to a new one
 before its next write.
 
-Enable it at runtime (Linux, any build of this fork; default off):
+Enable it at runtime (Linux, any JIT-enabled build of this fork; default off):
 
  luajit -Omcoderemap=1 app.lua
  jit.opt.start("mcoderemap=1")   -- from Lua or an embedding host
 
 Set it before the first trace is compiled, or call jit.flush() afterwards.
 Building with -DLUAJIT_SECURITY_MCODE=2 (./build --mcode 2) makes it the
-default. The flake exposes that build as packages.<system>.luajit-mdwe-remap
+default. That build requires the JIT; it refuses to compile with
+LUAJIT_DISABLE_JIT. The flake exposes that build as packages.<system>.luajit-mdwe-remap
 (Linux). Without the switch the fork behaves like upstream.
 
 Cost, measured against upstream on x86_64 Linux: no measurable change on 19
