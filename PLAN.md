@@ -54,3 +54,14 @@ Keep the JIT but close the memfd-to-executable route that MDWE leaves open. Same
 
 - [x] Research record `docs/LOCKDOWN_RESEARCH.md`: routes MDWE leaves open, BEAMJIT/.NET 8 behavior, partial seccomp prototype, recommendation not to build (Peter: write the research doc; he arranges review). Probes kept out of the repo in .build-work/lockdown/. (2026-09-30 18:40 EDT)
 - [ ] Open: vm.memfd_noexec measured in a root pid namespace or VM; /proc/self/mem force parameter verified; NoExecPaths vs this fork.
+
+## Code review fixes (CODE_REVIEW.md, Codex 2026-10-01; Peter approved order 2026-10-01)
+
+- [ ] R1 OOM during area commit exits host: prepare metadata before publishing; separate capacities; allocator-failure test.
+- [ ] R2 fork ownership data race: thread-local owner flag, lock before reading; TSan repeated-fork test.
+- [ ] R4 =2 with JIT compiled out: reject with #error; narrow README.
+- [ ] R5 failed hole punch retains storage: check result; close empty memfd.
+- [ ] R3/R11/A6 build: LUA_ROOT from prefix; build-all mkdir; reject passthrough --prefix.
+- [ ] R6 R7 R8 R9 R12 R10 A3 A4 test fixes.
+- [ ] R13 ./test on macOS: run on m4max natively.
+- [ ] A1 page-size alignment (needs 16K/64K Linux kernel to test); A2, A5 deferred.
