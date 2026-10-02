@@ -16,8 +16,10 @@ check "best is a measured size" true "$(jq -r '.best as $b | [.results[].sizemco
 check "remap mode used" true "$(jq -r '.flags | index("-Omcoderemap=1") != null' <<<"$out" 2>/dev/null)"
 check "stderr quiet" "" "$(cat "$TMPDIR/smt.err")"
 
-# Negative control: output that differs between runs must be refused.
-printf 'print(os.clock(), math.random())\nmath.randomseed(os.time()+os.clock()*1e9)\nprint(math.random())\n' >"$TMPDIR/smt-varying.lua"
+# Negative control: output that differs between sizes must be refused. The
+# fixture prints its own -Osizemcode argument (from /proc/self/cmdline), so
+# the difference is deterministic, not clock- or RNG-based (review A3).
+printf 'local f = io.open("/proc/self/cmdline")\nprint(f:read("*a"):match("%%-Osizemcode=%%d+"))\n' >"$TMPDIR/smt-varying.lua"
 out="$(LUAJIT="$luajit" "$tool" --json --runs 2 --sizes "16 64" "$TMPDIR/smt-varying.lua" 2>"$TMPDIR/smt.err")"; rc=$?
 check "varying output refused rc" 2 "$rc"
 check "varying output message" 1 "$(grep -c "output differs" "$TMPDIR/smt.err")"

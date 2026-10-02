@@ -70,6 +70,9 @@ machine="$(printf '%s|%s|%s' "$(hostname)" "$(uname -m)" "$(grep -m1 'model name
 ledger="$root/bench/$machine.ndjson"
 commit="$(git -C "$root" rev-parse --short=12 HEAD)"
 dirty="$(git -C "$root" status --porcelain -- src | grep -q . && echo true || echo false)"
+# One timestamp for every row of this run: tests/bm/prev-pair pairs fork and
+# upstream rows by it (review R10: separate date calls could differ by a second).
+run_ts="$(date -Iseconds)"
 bench="$LUAJIT_TEST_CLEANUP/bench"
 
 # name args (sized for ~0.1-0.8 s on the reference machine)
@@ -145,6 +148,8 @@ for c in "${cases[@]}"; do
 			r0=f0/u0; r1=f1/u1
 			print r0, r0*sqrt((sf0/f0)^2+(su0/u0)^2), r1, r1*sqrt((sf1/f1)^2+(su1/u1)^2)}')
 		noise_check "fork/upstream ratio vs last ($(jq -r .commit <<<"$pf"))" "$r0" "$s0" "$r1" "$s1"
+	else
+		printf '  \e[2mfork/upstream ratio: no paired history yet (this run seeds it)\e[0m\n'
 	fi
 	for v in fork upstream; do
 		label="$v"; [ "$v" = fork ] && label="${BM_FORK_LABEL:-fork}"
@@ -153,7 +158,7 @@ for c in "${cases[@]}"; do
 		if [ -n "$prev" ]; then
 			noise_check "$label vs last ($(jq -r .commit <<<"$prev"))" "$(jq -r .median_s <<<"$prev")" "$(jq -r '.mad_sigma_s // .stddev_s' <<<"$prev")" "$m" "$s" info
 		fi
-		[ "$log" = 1 ] && jq -c --arg ts "$(date -Iseconds)" --arg commit "$commit" --argjson dirty "$dirty" \
+		[ "$log" = 1 ] && jq -c --arg ts "$run_ts" --arg commit "$commit" --argjson dirty "$dirty" \
 			--arg bench "$name" --arg v "$v" --arg label "$label" --arg arg "$arg" --arg machine "$machine" \
 			'.results[]|select(.command==$v)|{ts:$ts,machine:$machine,commit:$commit,dirty:$dirty,bench:$bench,variant:$label,arg:$arg,runs:(.times|length),mean_s:.mean,stddev_s:.stddev,median_s:.median,mad_sigma_s:(.times|sort as $t|($t|length) as $n|(if $n%2==1 then $t[($n-1)/2] else ($t[$n/2-1]+$t[$n/2])/2 end) as $m|[$t[]|(.-$m)|if .<0 then -. else . end]|sort|(if $n%2==1 then .[($n-1)/2] else (.[$n/2-1]+.[$n/2])/2 end)*1.4826),user_s:.user,system_s:.system}' \
 			"$json" >>"$ledger"

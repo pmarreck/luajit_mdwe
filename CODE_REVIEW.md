@@ -255,6 +255,8 @@ Fix: compute one shared run timestamp or unique run ID before emitting both vari
 
 Attribution: introduced by the fork's benchmark producer/helper contract.
 
+Resolution (2026-10-01): fixed. `bm` takes one timestamp per run (`run_ts`) for every row, and `tests/bm/prev-pair` picks the newest fork row that has a same-run upstream row, so the legacy adjacent-second rows are skipped instead of disabling the check or being paired by guess; `bm` also says when no paired history exists. Tests: a new `prev-pair-test` case (newest fork row without its upstream row falls back to the last paired run). Verified on the real ledger: `trace_churn` pairs with the 14:24:35 run, and after a new `bm --only trace_churn` run both new rows share `20:18:04` and pair.
+
 ## Fork advisories
 
 ### A1. Small remap areas need actual OS page-size alignment
@@ -276,6 +278,8 @@ The remap check runs mode reporting, a trace smoke test and the upstream suite u
 Location: `tests/bm/sizemcode-tune-test:20`.
 
 The varying-output fixture prints `os.clock()` and RNG values seeded from clocks. It needs separate processes to produce different clock samples. Freezing the clocks in an isolated wrapper made the correct tuner accept identical output and caused exactly its two negative-control assertions to fail; the other seven checks passed. No spontaneous ordinary-suite failure was observed. Replace this fixture with output that deterministically depends on the explicit requested size argument.
+
+Resolution (2026-10-01): fixed. The fixture prints its own `-Osizemcode=N` argument from `/proc/self/cmdline`, so its output differs by size deterministically.
 
 ### A4. Failure diagnostics rerun the entire upstream suite
 
