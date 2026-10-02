@@ -16,6 +16,8 @@ The normal Linux acceptance suite passes, but two failure paths need attention b
 | WARNING | 13 |
 | ADVISORY | 6 |
 
+Fix status (2026-10-01, after the review): all 13 WARNING findings and advisories A3, A4 and A6 are resolved; each has a "Resolution" paragraph with its test. Open: A1 (page alignment on 64 KiB kernels, no such kernel available to test), A2 (MDWE checks in the Nix sandbox) and A5 (area-count scaling benchmark).
+
 All outstanding findings are fork additions or incomplete fork functionality. Three defects present in original LuaJIT are already fixed in this fork and appear separately below. They do not count as outstanding findings. No additional unresolved defect in unchanged upstream code was established.
 
 WARNING indicates a concrete correctness, resource, product or acceptance-control defect. R1 and R2 have the highest fix priority. ADVISORY indicates a narrower configuration issue, a documented unsupported-platform edge case, or a verification improvement. Severity does not imply that an exploit or resulting corruption was demonstrated.
