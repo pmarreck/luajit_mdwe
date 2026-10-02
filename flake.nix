@@ -67,6 +67,7 @@
 					LUAJIT_TEST_CLEANUP = "${luajit-test-cleanup}";
 				} ''
 					bash ${self}/tests/upstream-suite ${pkg.default}/bin/luajit | tee $out
+					bash ${self}/tests/zig/installed-modules ${pkg.default}/bin/luajit | tee -a $out
 				'';
 			} // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
 				# The remap build reports mode 2, compiles traces and passes the suite.

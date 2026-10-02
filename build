@@ -25,6 +25,10 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
+# The wrapper owns the output location (it publishes from it): refuse overrides.
+for a in "${extra[@]}"; do
+	case "$a" in -p|--prefix|--prefix=*|--prefix-*) echo "build: refusing $a after --: the output location is set by ./build" >&2; exit 2 ;; esac
+done
 
 case "$(uname -s)" in Linux) hos=linux habi=-gnu ;; Darwin) hos=macos habi= ;; *) echo "build: unsupported host OS $(uname -s)" >&2; exit 2 ;; esac
 case "$(uname -m)" in x86_64|amd64|AMD64) harch=x86_64 ;; aarch64|arm64) harch=aarch64 ;; *) echo "build: unsupported host arch $(uname -m)" >&2; exit 2 ;; esac

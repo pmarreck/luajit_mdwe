@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Review R11 and A6: ./build-all works in a fresh checkout (no .build-work),
+# and ./build refuses zig arguments that would move its output away from the
+# directory it publishes. Uses a stub build script; no real compilation.
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+w="$(mktemp -d "${TMPDIR:-/tmp}/build-wrappers.XXXXXX")"
+fails=0
+fail() { echo "build-wrappers: FAIL $*"; fails=$((fails+1)); }
+
+# R11: fresh copy of build-all next to a stub build that records its calls.
+cp "$root/build-all" "$w/build-all"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s/calls"\n' "$w" > "$w/build"
+chmod +x "$w/build" "$w/build-all"
+out="$("$w/build-all" 2>&1)"; rc=$?
+calls="$(wc -l < "$w/calls" 2>/dev/null || echo 0)"
+[ "$rc" = 0 ] && [ "$calls" = 5 ] || fail "build-all in a fresh dir: rc=$rc calls=$calls: $out"
+
+# A6: wrapper-owned output settings cannot be overridden after --.
+for a in "--prefix /elsewhere" "-p /elsewhere" "--prefix=/elsewhere"; do
+	out="$("$root/build" -- $a 2>&1)"; rc=$?
+	[ "$rc" = 2 ] && [[ "$out" == *"build: refusing"* ]] || fail "./build -- $a: rc=$rc: $out"
+done
+
+mv "$w" ~/.Trash/ 2>/dev/null
+[ "$fails" = 0 ] && echo "build-wrappers: ok (build-all fresh, --prefix refused)"
+exit "$fails"

@@ -6,6 +6,7 @@
 set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 targets=(x86_64-linux-gnu aarch64-linux-gnu aarch64-macos x86_64-windows-gnu aarch64-windows-gnu)
+mkdir -p "$root/.build-work"
 fails=0
 for t in "${targets[@]}"; do
 	if "$root/build" "$@" --target "$t" >"$root/.build-work/build-all-$t.log" 2>&1; then

@@ -313,6 +313,10 @@ pub fn build(b: *std.Build) void {
     var cflags: std.ArrayList([]const u8) = .empty;
     cflags.appendSlice(b.allocator, &.{ "-Wall", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-U_FORTIFY_SOURCE" }) catch @panic("OOM");
     if (cfg.unwind_external) cflags.append(b.allocator, "-DLUAJIT_UNWIND_EXTERNAL") catch @panic("OOM");
+    // Search modules under the install prefix (Makefile: -DLUA_ROOT unless /usr/local).
+    // Windows searches next to the executable instead (luaconf.h LUA_LDIR).
+    if (os != .windows and !std.mem.eql(u8, b.install_prefix, "/usr/local"))
+        cflags.append(b.allocator, b.fmt("-DLUA_ROOT=\"{s}\"", .{b.install_prefix})) catch @panic("OOM");
     cflags.appendSlice(b.allocator, xcflags) catch @panic("OOM");
 
     const lib_mod = b.createModule(.{
@@ -360,9 +364,9 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     // jit.* Lua modules (for -jv, -jdump, -p) plus the generated vmdef.lua.
-    const jitlib = "share/luajit-2.1/jit";
+    const jitlib = if (os == .windows) "bin/lua/jit" else "share/luajit-2.1/jit";
     b.installDirectory(.{ .source_dir = src.path(b, "jit"), .install_dir = .prefix, .install_subdir = jitlib, .include_extensions = &.{".lua"} });
-    b.getInstallStep().dependOn(&b.addInstallFileWithDir(vmdef_lua, .prefix, jitlib ++ "/vmdef.lua").step);
+    b.getInstallStep().dependOn(&b.addInstallFileWithDir(vmdef_lua, .prefix, b.fmt("{s}/vmdef.lua", .{jitlib})).step);
 
     // Generated sources, for comparison against a Makefile build.
     const gen_step = b.step("generated", "Install generated headers and lj_vm into <prefix>/generated");

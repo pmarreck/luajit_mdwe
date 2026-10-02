@@ -133,6 +133,8 @@ Fix: derive the POSIX search paths from the actual prefix, as the upstream Makef
 
 Attribution: introduced by the fork's Zig build. The upstream Makefile supplies custom-prefix definitions.
 
+Resolution (2026-10-01): fixed. `build.zig` passes `-DLUA_ROOT="<install prefix>"` on POSIX (unless `/usr/local`, as the Makefile does) and installs the `jit` modules under `bin/lua/jit` on Windows, where `luaconf.h` looks. Test: `tests/zig/installed-modules` runs `-jv` and `require("jit.vmdef")` from `/` with `LUA_PATH`/`LUA_CPATH` unset; in `./test` for the `./build` product and in the flake's `upstream-suite` check for the Nix package. Windows layout checked by a cross build (not executed).
+
 #### R11. WARNING: `build-all` fails before building anything in a fresh checkout
 
 Location: `build-all:11`.
@@ -144,6 +146,8 @@ Evidence: an unchanged copy of `build-all` in a fresh temporary directory, with 
 Fix: create `.build-work` before the loop. Check the driver from an empty work directory.
 
 Attribution: introduced by the fork.
+
+Resolution (2026-10-01): fixed (`mkdir -p .build-work`). Test: `tests/cli/build-wrappers` runs a fresh copy of `build-all` with a recording stub.
 
 #### R13. WARNING: The full test entrypoint unconditionally selects Linux paths on macOS
 
@@ -280,6 +284,8 @@ The retained benchmark controls use fixed workload sizes or vary code layout. Th
 Locations: `build:41`, `build:53`.
 
 The wrapper computes its prefix, then passes arbitrary later Zig arguments. A later `--prefix` wins in Zig while publication still targets the original directory. An unchanged wrapper with a minimal real Zig graph returned success, installed at the alternate prefix, and published a dangling host symlink. An existing artifact at the original prefix would instead leave a stale executable selected. Reject overrides of wrapper-owned output settings, or derive publication from the effective settings and verify the installed executable before replacing the link. Normal builds are unaffected.
+
+Resolution (2026-10-01): fixed. `./build` refuses `-p`, `--prefix`, `--prefix=…` and `--prefix-*` after `--` (exit 2) before running Zig. Test: `tests/cli/build-wrappers`.
 
 ## Issues in original LuaJIT, already fixed by our fork
 

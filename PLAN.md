@@ -61,7 +61,7 @@ Keep the JIT but close the memfd-to-executable route that MDWE leaves open. Same
 - [x] R2 fork ownership race: thread-local mc_held; tests/mdwe/tsan-fork (TSan, 1000 forks) in ./test. (2026-10-01 19:58 EDT)
 - [x] R4 =2 without the JIT now refused at compile time (#error); README narrowed; cross-targets checks. (2026-10-01 20:05 EDT)
 - [x] R5 storage after flush: truncate memfd when last area freed; punching and free list removed; flush_storage.lua under ~fallocate. (2026-10-01 20:01 EDT)
-- [ ] R3/R11/A6 build: LUA_ROOT from prefix; build-all mkdir; reject passthrough --prefix.
+- [x] R3/R11/A6: LUA_ROOT from install prefix, Windows bin/lua/jit; build-all mkdir; ./build refuses --prefix passthrough; tests/zig/installed-modules (also in flake check), tests/cli/build-wrappers. (2026-10-01 20:15 EDT)
 - [ ] R6 R7 R8 R9 R12 R10 A3 A4 test fixes.
 - [ ] R13 ./test on macOS: run on m4max natively.
 - [ ] A1 page-size alignment (needs 16K/64K Linux kernel to test); A2, A5 deferred.

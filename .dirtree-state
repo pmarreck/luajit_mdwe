@@ -18,6 +18,7 @@ annotate=[
 	tests/bm/prev-pair = Pairs ./bm's previous fork row with the upstream row of the same run (ratio history gate)
 	tests/bm/prev-pair-test = Synthetic-ledger test for prev-pair (cross-variant mispairing regression)
 	tests/bm/sizemcode-tune-test = Tests bin/sizemcode-tune: JSON shape, remap flag, output-mismatch refusal, --match
+	tests/cli/build-wrappers = build-all in a fresh checkout and ./build refusing --prefix passthrough (review R11, A6)
 	tests/compile/cross-targets = zig cc compile matrix for macOS (HRT/plain) and Windows mcode/callback allocators, -Werror
 	tests/macos/hrt = macOS hardened-runtime (MAP_JIT) build, sign, JIT/callback/suite checks; runs on a Mac
 	tests/macos/remote = Sync working tree to a Mac over ssh and run native + HRT checks there
@@ -46,4 +47,5 @@ annotate=[
 	tests/zig/arm64-qemu = Emulated arm64 (static musl under qemu-user) suite + checksum check
 	tests/zig/compare-generated = Differential test: build.zig vs Makefile generated files across 5 targets
 	tests/zig/host-interp = Checks the host build requests the host's ELF interpreter (stock NixOS without nix-ld)
+	tests/zig/installed-modules = Installed luajit finds its jit.* modules without LUA_PATH (review R3)
 ]

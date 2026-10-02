@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Review R3: the installed binary must find its own jit.* modules without
+# LUA_PATH, from an unrelated directory (-jv, require("jit.vmdef")).
+# Usage: tests/zig/installed-modules [LUAJIT]  (default: the host ./build product)
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+lj="$(readlink -f "${1:-$root/bin/$(uname -s | tr '[:upper:]' '[:lower:]')/$(uname -m)/luajit}")"
+fails=0
+check() {  # label want cmd...
+	local label="$1" want="$2"; shift 2
+	local out; out="$(cd / && env -u LUA_PATH -u LUA_CPATH "$@" 2>&1)"
+	if [[ "$out" == *"$want"* ]]; then :; else echo "installed-modules: FAIL $label: $out"; fails=$((fails+1)); fi
+}
+check "-jv" "ok" "$lj" -jv -e 'print("ok")'
+check "require jit.vmdef" "vmdef ok" "$lj" -e 'require("jit.vmdef") print("vmdef ok")'
+[ "$fails" = 0 ] && echo "installed-modules: ok ($lj)"
+exit "$fails"

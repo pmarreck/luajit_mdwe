@@ -20,6 +20,7 @@ fi
 if "$root/build" >"$root/.build-work/zig-build.log" 2>&1; then
 	zl="$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast/bin/luajit"
 	"$root/tests/zig/host-interp" || fails=$((fails+1))
+	"$root/tests/zig/installed-modules" || fails=$((fails+1))
 	"$root/tests/mdwe/run" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
 	"$root/tests/upstream-suite" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
 	# Default build with the memfd allocator enabled at runtime (-Omcoderemap=1).
@@ -34,6 +35,7 @@ if "$root/build" --mcode 2 >"$root/.build-work/zig-build-mcode2.log" 2>&1; then
 else
 	echo "zig build --mcode 2 failed; see .build-work/zig-build-mcode2.log"; fails=$((fails+1))
 fi
+"$root/tests/cli/build-wrappers" || fails=$((fails+1))
 "$root/tests/bm/prev-pair-test" >"$root/.build-work/prev-pair.log" 2>&1 && tail -1 "$root/.build-work/prev-pair.log" || { cat "$root/.build-work/prev-pair.log"; fails=$((fails+1)); }
 "$root/tests/zig/compare-generated" || fails=$((fails+1))
 "$root/tests/compile/cross-targets" || fails=$((fails+1))
