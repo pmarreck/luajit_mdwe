@@ -19,6 +19,7 @@ annotate=[
 	tests/bm/prev-pair-test = Synthetic-ledger test for prev-pair (cross-variant mispairing regression)
 	tests/bm/sizemcode-tune-test = Tests bin/sizemcode-tune: JSON shape, remap flag, output-mismatch refusal, --match
 	tests/cli/build-wrappers = build-all in a fresh checkout and ./build refusing --prefix passthrough (review R11, A6)
+	tests/cli/upstream-suite-wrapper = Fake-binary checks that tests/upstream-suite rejects crashed or partial runs (review R6)
 	tests/compile/cross-targets = zig cc compile matrix for macOS (HRT/plain) and Windows mcode/callback allocators, -Werror
 	tests/macos/hrt = macOS hardened-runtime (MAP_JIT) build, sign, JIT/callback/suite checks; runs on a Mac
 	tests/macos/remote = Sync working tree to a Mac over ssh and run native + HRT checks there

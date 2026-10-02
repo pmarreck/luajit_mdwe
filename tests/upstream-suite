@@ -17,11 +17,18 @@ if [ "${1:-}" = --static ]; then baseline="295 345 346 363 365 366 508"; shift; 
 luajit="$(readlink -f "${1:-$root/src/luajit}")"
 [ -n "${LUAJIT_TEST_CLEANUP:-}" ] || { echo "upstream-suite: run inside 'nix develop'" >&2; exit 2; }
 t="$LUAJIT_TEST_CLEANUP/test"
-out="$(cd "$t" && LUA_PATH="$t/?.lua;;" timeout 900 "$luajit" test.lua 2>&1)"
+out="$(cd "$t" && LUA_PATH="$t/?.lua;;" timeout 900 "$luajit" test.lua 2>&1)"; rc=$?
 summary="$(grep -E '^[0-9]+ passed, [0-9]+ failed' <<<"$out" | tail -1)"
 failed="$(grep -oE 'pass command line arguments: .*' <<<"$out" | cut -d: -f2 | xargs)"
 if [ -z "$summary" ]; then
 	echo "upstream-suite: FAIL (no summary; suite crashed?)"; tail -5 <<<"$out"; exit 1
+fi
+# A complete run executes all 508 tests and, since the baseline is not empty,
+# exits 1 (test.lua: os.exit(1) unless every test passed). Anything else is a
+# crash, timeout or partial run, even if the printed summary looks right.
+read -r npass nfail <<<"$(sed -E 's/^([0-9]+) passed, ([0-9]+) failed.*/\1 \2/' <<<"$summary")"
+if [ $((npass + nfail)) -ne 508 ] || [ "$rc" -ne 1 ]; then
+	echo "upstream-suite: FAIL: $summary, exit $rc (want 508 tests and exit 1)"; tail -5 <<<"$out"; exit 1
 fi
 if [ "$failed" != "$baseline" ]; then
 	echo "upstream-suite: FAIL: $summary; failing [$failed], baseline [$baseline]"

@@ -4,7 +4,9 @@
 # Usage: tests/zig/installed-modules [LUAJIT]  (default: the host ./build product)
 set -u
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-lj="$(readlink -f "${1:-$root/bin/$(uname -s | tr '[:upper:]' '[:lower:]')/$(uname -m)/luajit}")"
+case "$(uname -s)" in Darwin) os=macos ;; *) os="$(uname -s | tr '[:upper:]' '[:lower:]')" ;; esac
+case "$(uname -m)" in arm64) arch=aarch64 ;; *) arch="$(uname -m)" ;; esac
+lj="$(readlink -f "${1:-$root/bin/$os/$arch/luajit}")"
 fails=0
 check() {  # label want cmd...
 	local label="$1" want="$2"; shift 2

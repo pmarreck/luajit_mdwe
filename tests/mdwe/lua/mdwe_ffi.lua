@@ -6,6 +6,7 @@ int fork(void);
 int waitpid(int pid, int *status, int options);
 void _exit(int status);
 int pipe(int fds[2]);
+int close(int fd);
 long read(int fd, void *buf, unsigned long n);
 long write(int fd, const void *buf, unsigned long n);
 long readlink(const char *path, char *buf, unsigned long n);
@@ -55,7 +56,7 @@ function M.pipe()
   return p[0], p[1]
 end
 function M.send(fd) assert(ffi.C.write(fd, "x", 1) == 1) end
-function M.wait(fd) local b = ffi.new("char[1]"); assert(ffi.C.read(fd, b, 1) == 1) end
+function M.wait(fd) local b = ffi.new("char[1]"); assert(ffi.C.read(fd, b, 1) == 1, "peer exited before the handshake") end
 function M.waitchild(pid)
   local st = ffi.new("int[1]")
   assert(ffi.C.waitpid(pid, st, 0) == pid)

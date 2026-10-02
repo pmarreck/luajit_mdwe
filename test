@@ -4,40 +4,51 @@
 # 2. build.zig host build: the same two suites against the Zig-built binary.
 # 3. build.zig vs Makefile generated-file differential across targets.
 # 4. Cross-target compile checks and emulated arm64 execution.
+# MDWE, memfd-remap, ThreadSanitizer and qemu parts are Linux-only; on macOS
+# the hardened-runtime checks (tests/macos/hrt) run instead.
 # Exit code = number of failed parts.
 set -u
 set -o pipefail  # suite output is piped through sed; keep the suite's status
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -n "${IN_NIX_SHELL:-}" ] || exec nix develop "$root" -c "$0" "$@"
 mkdir -p "$root/.build-work"
+case "$(uname -m)" in arm64) arch=aarch64 ;; *) arch="$(uname -m)" ;; esac
+linux=0
+case "$(uname -s)" in Linux) linux=1 htriple="$arch-linux-gnu" ;; Darwin) htriple="$arch-macos" ;; *) echo "test: unsupported OS"; exit 1 ;; esac
 fails=0
 if ! make -s -C "$root/src" -j16 BUILDMODE=static >"$root/.build-work/make.log" 2>&1; then
 	echo "LuaJIT Makefile build failed; see .build-work/make.log"; exit 1
 fi
-"$root/tests/mdwe/run" "$root/src/luajit" || fails=$((fails+1))
+[ "$linux" = 1 ] && { "$root/tests/mdwe/run" "$root/src/luajit" || fails=$((fails+1)); }
 "$root/tests/upstream-suite" "$root/src/luajit" || fails=$((fails+1))
-"$root/tests/mdwe/tsan-fork" || fails=$((fails+1))
+"$root/tests/cli/upstream-suite-wrapper" || fails=$((fails+1))
+[ "$linux" = 1 ] && { "$root/tests/mdwe/tsan-fork" || fails=$((fails+1)); }
+[ "$linux" = 1 ] || { "$root/tests/macos/hrt" || fails=$((fails+1)); }
 if "$root/build" >"$root/.build-work/zig-build.log" 2>&1; then
-	zl="$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast/bin/luajit"
-	"$root/tests/zig/host-interp" || fails=$((fails+1))
-	"$root/tests/zig/installed-modules" || fails=$((fails+1))
-	"$root/tests/mdwe/run" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
+	zl="$root/zig-out/$htriple/ReleaseFast/bin/luajit"
+	"$root/tests/zig/installed-modules" "$zl" || fails=$((fails+1))
 	"$root/tests/upstream-suite" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
-	# Default build with the memfd allocator enabled at runtime (-Omcoderemap=1).
-	"$root/tests/mdwe/r_mode" "$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast" runtime | sed "s/^/runtime: /" || fails=$((fails+1))
-	"$root/tests/bm/sizemcode-tune-test" "$zl" || fails=$((fails+1))
+	if [ "$linux" = 1 ]; then
+		"$root/tests/zig/host-interp" || fails=$((fails+1))
+		"$root/tests/mdwe/run" "$zl" | sed 's/^/zig: /' || fails=$((fails+1))
+		# Default build with the memfd allocator enabled at runtime (-Omcoderemap=1).
+		"$root/tests/mdwe/r_mode" "$root/zig-out/$htriple/ReleaseFast" runtime | sed "s/^/runtime: /" || fails=$((fails+1))
+		"$root/tests/bm/sizemcode-tune-test" "$zl" || fails=$((fails+1))
+	fi
 else
 	echo "zig build failed; see .build-work/zig-build.log"; fails=$((fails+1))
 fi
 # 2b. LUAJIT_SECURITY_MCODE=2 (docs/MDWE_SPEC.md): acceptance tests T1-T11.
-if "$root/build" --mcode 2 >"$root/.build-work/zig-build-mcode2.log" 2>&1; then
-	"$root/tests/mdwe/r_mode" "$root/zig-out/$(uname -m)-linux-gnu/ReleaseFast-mcode2" || fails=$((fails+1))
-else
-	echo "zig build --mcode 2 failed; see .build-work/zig-build-mcode2.log"; fails=$((fails+1))
+if [ "$linux" = 1 ]; then
+	if "$root/build" --mcode 2 >"$root/.build-work/zig-build-mcode2.log" 2>&1; then
+		"$root/tests/mdwe/r_mode" "$root/zig-out/$htriple/ReleaseFast-mcode2" || fails=$((fails+1))
+	else
+		echo "zig build --mcode 2 failed; see .build-work/zig-build-mcode2.log"; fails=$((fails+1))
+	fi
 fi
 "$root/tests/cli/build-wrappers" || fails=$((fails+1))
 "$root/tests/bm/prev-pair-test" >"$root/.build-work/prev-pair.log" 2>&1 && tail -1 "$root/.build-work/prev-pair.log" || { cat "$root/.build-work/prev-pair.log"; fails=$((fails+1)); }
-"$root/tests/zig/compare-generated" || fails=$((fails+1))
+[ "$linux" = 1 ] && { "$root/tests/zig/compare-generated" || fails=$((fails+1)); }
 "$root/tests/compile/cross-targets" || fails=$((fails+1))
-"$root/tests/zig/arm64-qemu" || fails=$((fails+1))
+[ "$linux" = 1 ] && { "$root/tests/zig/arm64-qemu" || fails=$((fails+1)); }
 exit "$fails"

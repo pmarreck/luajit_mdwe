@@ -11,11 +11,20 @@ local function gen(expr)
   return load("return function(k) local s = 0 for i = 1, 100000 do s = s + " .. expr .. " end return s end")()
 end
 local pre = { gen("(i % k)"), gen("(i * k) % 7"), gen("(i + k) % 5"), gen("bit.band(i, k)") }
-local post = { gen("(i * k) % 13"), gen("(i - k) % 3"), gen("bit.bxor(i, k) % 9") }
+local post_src = { "(i * k) % 13", "(i - k) % 3", "bit.bxor(i, k) % 9" }
+local post, ref = {}, {}
+for i, e in ipairs(post_src) do
+  post[i] = gen(e)
+  ref[i] = gen(e); jit.off(ref[i], true)  -- Interpreter-only oracle (review R8).
+end
 local function work(k) local s = 0 for _, f in ipairs(pre) do s = s + f(k) end return s end
 local function work2(k) local s = 0 for _, f in ipairs(post) do s = s + f(k) end return s end
+local function ref2(k) local s = 0 for _, f in ipairs(ref) do s = s + f(k) end return s end
+local function ntraces(snap) local n = 0 for _ in pairs(snap) do n = n + 1 end return n end
 local expect = {}
 for k = 3, 8 do expect[k] = work(k) end
+local expect2 = {}
+for _, k in ipairs{ 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18 } do expect2[k] = ref2(k) end
 local cb = h.make_cmp()
 local snap = h.snapshot()
 local fd0, seals0, ino0 = h.mcode_memfd()
@@ -29,7 +38,9 @@ if remap then check(fd0 ~= nil, "no mcode memfd before fork") end
 local p2c_r, p2c_w = h.pipe()
 local c2p_r, c2p_w = h.pipe()
 local pid = h.ffi.C.fork()
+if pid < 0 then print("fork_isolation FAIL: fork() failed") os.exit(1) end
 if pid == 0 then
+  h.ffi.C.close(p2c_w); h.ffi.C.close(c2p_r)  -- Unused ends: EOF instead of a hang.
   local mysnap = h.snapshot()
   if remap then
     local _, seals = h.mcode_memfd()
@@ -38,7 +49,8 @@ if pid == 0 then
   h.send(c2p_w); h.wait(p2c_r)            -- parent compiles meanwhile
   check(h.changed(mysnap) == 0, "child: parent's post-fork compile changed child code")
   for k = 3, 8 do check(work(k) == expect[k], "child: wrong result from pre-fork trace") end
-  for k = 3, 8 do check(work2(k) == work2(k), "child: compile failed") end
+  for k = 3, 8 do check(work2(k) == expect2[k], "child: wrong result from post-fork code") end
+  check(ntraces(h.snapshot()) > ntraces(mysnap), "child: post-fork functions did not compile")
   check(h.sorted(cb) == "12345", "child: pre-fork FFI callback broken")
   if remap then
     local _, seals, ino = h.mcode_memfd()
@@ -49,12 +61,18 @@ if pid == 0 then
   io.stdout:flush()
   h.ffi.C._exit(#fails == 0 and 0 or 1)
 end
-h.wait(c2p_r)
+h.ffi.C.close(c2p_w); h.ffi.C.close(p2c_r)
+if not pcall(h.wait, c2p_r) then
+  h.waitchild(pid)
+  print("fork_isolation FAIL: child exited before the handshake") os.exit(1)
+end
+local nparent = ntraces(h.snapshot())
 if remap then
   local _, seals = h.mcode_memfd()
   check(seals and bit.band(seals, SEAL_WRITE_SHRINK_GROW) == SEAL_WRITE_SHRINK_GROW, "parent: memfd not write-sealed after fork")
 end
-for k = 3, 8 do check(work2(k + 10) == work2(k + 10), "parent: compile failed") end
+for k = 13, 18 do check(work2(k) == expect2[k], "parent: wrong result from post-fork code") end
+check(ntraces(h.snapshot()) > nparent, "parent: post-fork functions did not compile")
 if remap then
   local _, _, ino = h.mcode_memfd()
   check(ino ~= ino0, "parent: still on the pre-fork memfd after compiling")
@@ -66,4 +84,4 @@ check(h.changed(snap) == 0, "parent: child's compile changed parent code")
 for k = 3, 8 do check(work(k) == expect[k], "parent: wrong result from pre-fork trace") end
 check(h.sorted(cb) == "12345", "parent: pre-fork FFI callback broken")
 if #fails > 0 then print("fork_isolation FAIL: " .. table.concat(fails, "; ")) os.exit(1) end
-print(("fork_isolation: ok remap=%d traces=%d"):format(remap and 1 or 0, (function() local n = 0 for _ in pairs(snap) do n = n + 1 end return n end)()))
+print(("fork_isolation: ok remap=%d traces=%d"):format(remap and 1 or 0, ntraces(snap)))

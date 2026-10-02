@@ -105,13 +105,20 @@ for mode in none kernel; do
 	expect $mode 0 "warm=" "$bin/embed-oom-mcode2"
 done
 
-# T6 (P1): mechanical syscall audit of =2 runs.
-audit="$(for s in jit_smoke ffi_callback trace_churn cross_area fork_isolation; do
-	strace -f -e trace=mmap,mprotect,pkey_mprotect "$luajit" "$lua/$s.lua" 2>&1 >/dev/null
-done)"
-if grep -E 'mprotect\([^)]*PROT_EXEC' <<<"$audit" >/dev/null; then bad "P1: mprotect with PROT_EXEC: $(grep -E 'mprotect\([^)]*PROT_EXEC' <<<"$audit" | head -2)"; else ok; fi
-if grep -E 'mmap\([^)]*PROT_WRITE\|PROT_EXEC' <<<"$audit" >/dev/null; then bad "P1: mmap with W|X"; else ok; fi
-if grep -E 'mmap\([^)]*PROT_READ\|PROT_EXEC, MAP_PRIVATE\|MAP_FIXED' <<<"$audit" >/dev/null; then ok; else bad "mechanism: no MAP_FIXED RX private remap seen"; fi
+# T6 (P1): mechanical syscall audit, per workload (review R9): each traced run
+# must succeed and show its own RX private MAP_FIXED remap, and none may
+# mprotect with PROT_EXEC or mmap W|X. A failed collection is a failure.
+# The remap pattern ends at the fd: the loader's MAP_FIXED|MAP_DENYWRITE
+# library mappings must not count as evidence.
+for s in jit_smoke ffi_callback trace_churn cross_area fork_isolation; do
+	log="$bin/strace-$s.log"
+	if ! strace -f -qq -o "$log" -e trace=mmap,mprotect,pkey_mprotect "$luajit" "$lua/$s.lua" >/dev/null 2>&1; then
+		bad "P1 $s: traced run failed"; continue
+	fi
+	if grep -E 'mprotect\([^)]*PROT_EXEC' "$log" >/dev/null; then bad "P1 $s: mprotect with PROT_EXEC: $(grep -m2 -E 'mprotect\([^)]*PROT_EXEC' "$log")"; else ok; fi
+	if grep -E 'mmap\([^)]*PROT_WRITE\|PROT_EXEC' "$log" >/dev/null; then bad "P1 $s: mmap with W|X"; else ok; fi
+	if grep -E 'mmap\([^)]*PROT_READ\|PROT_EXEC, MAP_PRIVATE\|MAP_FIXED, [0-9]' "$log" >/dev/null; then ok; else bad "mechanism $s: no MAP_FIXED RX private remap seen"; fi
+done
 
 # T8: memfd_create filtered with an errno: JIT-on panics, -joff completes.
 if [ "$systemd_ok" = 1 ]; then
@@ -131,7 +138,8 @@ for w in "" mdwe-exec sdmdwe-seccomp-exec; do
 		target="$root/.build-work/luajit-mcode2-$w"
 		printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$bin/$w" "$luajit" >"$target"; chmod +x "$target"
 	fi
-	if "$root/tests/upstream-suite" "$target" >/dev/null; then ok; else bad "T9 upstream suite under ${w:-none}: $("$root/tests/upstream-suite" "$target" | tail -1)"; fi
+	# One run: its own output explains a failure (review A4: no diagnostic rerun).
+	if o="$("$root/tests/upstream-suite" "$target")"; then ok; else bad "T9 upstream suite under ${w:-none}: $(head -1 <<<"$o")"; fi
 done
 
 printf 'r_mode: %d passed, %d failed, %d skipped (systemd column available: %d)\n' "$pass" "$fail" "$skip" "$systemd_ok"

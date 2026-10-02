@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Review R6: tests/upstream-suite must reject a run that prints the baseline
+# but crashes, or runs only part of the suite; a complete baseline run
+# passes (control). Fake binaries stand in for luajit. Run inside nix develop.
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+w="$(mktemp -d "${TMPDIR:-/tmp}/suite-wrapper.XXXXXX")"
+fails=0
+fake() {  # name passed failed rc
+	printf '#!/usr/bin/env bash\necho "%s passed, %s failed"\necho "pass command line arguments: 363 365 366"\nexit %s\n' "$2" "$3" "$4" > "$w/$1"
+	chmod +x "$w/$1"
+}
+fake crash 505 3 139
+fake truncated 10 3 1
+fake complete 505 3 1
+for c in crash:1 truncated:1 complete:0; do
+	name="${c%%:*}" want="${c#*:}"
+	out="$("$root/tests/upstream-suite" "$w/$name" 2>&1)"; rc=$?
+	[ "$rc" = "$want" ] || { echo "upstream-suite-wrapper: FAIL $name: rc=$rc want $want: $out"; fails=$((fails+1)); }
+done
+mv "$w" ~/.Trash/ 2>/dev/null
+[ "$fails" = 0 ] && echo "upstream-suite-wrapper: ok (crash and truncated runs rejected)"
+exit "$fails"

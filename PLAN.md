@@ -62,6 +62,7 @@ Keep the JIT but close the memfd-to-executable route that MDWE leaves open. Same
 - [x] R4 =2 without the JIT now refused at compile time (#error); README narrowed; cross-targets checks. (2026-10-01 20:05 EDT)
 - [x] R5 storage after flush: truncate memfd when last area freed; punching and free list removed; flush_storage.lua under ~fallocate. (2026-10-01 20:01 EDT)
 - [x] R3/R11/A6: LUA_ROOT from install prefix, Windows bin/lua/jit; build-all mkdir; ./build refuses --prefix passthrough; tests/zig/installed-modules (also in flake check), tests/cli/build-wrappers. (2026-10-01 20:15 EDT)
-- [ ] R6 R7 R8 R9 R12 R10 A3 A4 test fixes.
-- [ ] R13 ./test on macOS: run on m4max natively.
+- [x] R6 R7 R8 R9 R12 A4 test fixes (R9 also found the loader-mapping false positive). (2026-10-01 20:25 EDT)
+- [ ] R10 one run id in bm; A3 deterministic negative fixture.
+- [x] R13 ./test OS-aware; full suite green natively on the M4 Max via tests/macos/remote. (2026-10-01 20:25 EDT)
 - [ ] A1 page-size alignment (needs 16K/64K Linux kernel to test); A2, A5 deferred.

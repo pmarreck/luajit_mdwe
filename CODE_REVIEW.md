@@ -161,6 +161,8 @@ Fix: derive the host target with the same normalization as `build`, route MDWE/r
 
 Attribution: introduced by the fork's full-suite driver.
 
+Resolution (2026-10-01): fixed. `./test` derives the host triple like `./build` (`aarch64-macos` on a Mac) and runs the MDWE, memfd-remap, ThreadSanitizer, generated-source and qemu parts only on Linux, and `tests/macos/hrt` on macOS. Executed natively on the M4 Max via `tests/macos/remote`: exit 0 (upstream suite on Makefile and Zig builds, hardened-runtime checks, installed modules, wrapper tests, cross-target compiles).
+
 ### Inadequate and futile test coverage
 
 #### R6. WARNING: The upstream-suite wrapper accepts a crashed or truncated run
@@ -175,6 +177,8 @@ Fix: retain and validate the suite exit status as well as the complete expected 
 
 Attribution: introduced by the fork's wrapper, not a failure of LuaJIT or the pinned test suite.
 
+Resolution (2026-10-01): fixed. The wrapper now requires 508 tests in total and exit status 1 (the pinned `test.lua` exits 1 whenever any test fails, and the baseline is not empty). Test: `tests/cli/upstream-suite-wrapper` with fake binaries: crash-after-summary and truncated runs are rejected, a complete run passes.
+
 #### R7. WARNING: Early child failure can hang the fork isolation test indefinitely
 
 Locations: `tests/mdwe/lua/fork_isolation.lua:29`, `tests/mdwe/lua/fork_isolation.lua:52`; pipe helpers at `tests/mdwe/lua/mdwe_ffi.lua:61`.
@@ -186,6 +190,8 @@ Evidence: an isolated copy injected child `_exit(1)` before its first handshake.
 Fix: check the `fork` result, close unused pipe ends in each process, and propagate EOF/child status as a failure. Use a bounded failure-reporting deadline as a fallback, not a sleep-based handshake. Test early child exit and failed-fork behavior. The C embedding fork harness already closes unused ends and offers a useful pattern.
 
 Attribution: introduced by the fork's Lua test.
+
+Resolution (2026-10-01): fixed. Each process closes its unused pipe ends, `fork()` failure is checked, and an early child exit is reported ("child exited before the handshake") instead of blocking. Checked on a copy with `_exit(1)` before the handshake: before, killed by a 10 s timeout (124); after, exit 1 at once.
 
 #### R8. WARNING: Post-fork arithmetic is checked against itself
 
@@ -199,6 +205,8 @@ Fix: compare the child inputs 3..8 and parent inputs 13..18 with independently c
 
 Attribution: introduced by the fork's test oracle.
 
+Resolution (2026-10-01): fixed. Expected post-fork results come from interpreter-only copies of the same functions (`jit.off`) computed before the fork, and each process must show new traces after its post-fork work. Checked on a copy whose `work2` returns `s + 1`: before, passed; after, fails in both processes.
+
 #### R9. WARNING: The syscall audit accepts partially failed evidence collection
 
 Locations: `tests/mdwe/r_mode:94`, `tests/mdwe/r_mode:95`, `tests/mdwe/r_mode:99`.
@@ -211,6 +219,8 @@ Fix: require every collector invocation and workload to succeed before evaluatin
 
 Attribution: introduced by the fork's acceptance runner. This finding does not claim the actual full-suite run suffered a collection failure.
 
+Resolution (2026-10-01): fixed. Each workload is traced separately to its own log; a failed traced run is a failure, and each workload needs its own remap evidence. Found while verifying: the remap pattern also matched the dynamic loader's `MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE` library mappings, so a run without the memfd allocator still "showed" the mechanism (2 matches). The pattern now ends at the fd argument: 0 matches without `-Omcoderemap=1`, 1 with it.
+
 #### R12. WARNING: The macOS remote driver masks the plain suite's failure
 
 Location: `tests/macos/remote:18`.
@@ -222,6 +232,8 @@ Evidence: in the pinned development shell, the same clean nested-shell pipeline 
 Fix: enable pipefail inside the remote Bash or inspect the producer status explicitly. Test a failing plain suite with a passing hardened-runtime branch.
 
 Attribution: introduced by the fork's remote driver. The Nix flake's `runCommand` pipelines are different: the pinned stdenv already enables pipefail, and an isolated failing-producer probe correctly failed its derivation.
+
+Resolution (2026-10-01): fixed by removing the inner pipeline. With R13, the driver syncs the tree and runs `nix develop -c ./test` on the Mac, so its exit status is `./test`'s (which sets `pipefail`). Observed on the M4 Max: a run with one failing check returned 1.
 
 ### Duplicated run metadata and benchmark controls
 
@@ -270,6 +282,8 @@ The varying-output fixture prints `os.clock()` and RNG values seeded from clocks
 Location: `tests/mdwe/r_mode:119`; per-run deadline at `tests/upstream-suite:20`.
 
 On T9 failure, the original output is discarded and the complete suite is invoked again solely to obtain a diagnostic line. An isolated failing producer was called twice and the reported message came from invocation 2. A timed-out run can cost another 900 seconds, and a nondeterministic failure's first evidence is lost. Capture the first invocation's output and status once.
+
+Resolution (2026-10-01): fixed; T9 keeps the first run's output and reports its FAIL line.
 
 ### A5. Benchmark coverage does not constrain growth in live-area count
 
