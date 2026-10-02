@@ -29,6 +29,7 @@ annotate=[
 	tests/mdwe/lua/cross_area.lua = T4: side traces patching parents in other mcode areas
 	tests/mdwe/lua/ffi_callback.lua = Exercises FFI callback trampoline page via qsort
 	tests/mdwe/lua/ffi_callback_pcall.lua = FFI callback must work or raise a catchable error, never SIGSEGV
+	tests/mdwe/lua/flush_storage.lua = Checks a flush leaves the mcode memfd with no allocated storage, also with fallocate denied (review R5)
 	tests/mdwe/lua/fork_flush.lua = T5b: parent flush while child executes pre-fork traces
 	tests/mdwe/lua/fork_isolation.lua = T5a/e/T11: fork isolation, seal at fork, re-home, callbacks
 	tests/mdwe/lua/jit_smoke.lua = Forces trace compilation and reports trace count

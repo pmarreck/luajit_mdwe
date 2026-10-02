@@ -235,12 +235,6 @@ static void mcode_setprot(jit_State *J, void *p, size_t sz, int prot)
 #define F_SEAL_GROW		0x0004
 #define F_SEAL_WRITE		0x0008
 #endif
-#ifndef FALLOC_FL_KEEP_SIZE
-#define FALLOC_FL_KEEP_SIZE	0x01
-#endif
-#ifndef FALLOC_FL_PUNCH_HOLE
-#define FALLOC_FL_PUNCH_HOLE	0x02
-#endif
 
 #define MC_SEALS	(F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_WRITE)
 
@@ -251,11 +245,6 @@ typedef struct MCodeArea {
   int rw;		/* Currently mapped writable (holds one lock depth). */
 } MCodeArea;
 
-typedef struct MCodeExtent {
-  off_t ofs;
-  size_t sz;
-} MCodeExtent;
-
 typedef struct MCodeCtx {
   struct MCodeCtx *next;	/* Process-wide registry for fork handling. */
   pthread_mutex_t lock;	/* Held while any area is writable or the file mutates. */
@@ -264,9 +253,7 @@ typedef struct MCodeCtx {
   int sealed;		/* Write-sealed by a fork(): re-home before mutating. */
   off_t fsize;
   MCodeArea *area;	/* Registered areas; also the MAP_FIXED guard. */
-  MCodeExtent *ext;	/* Punched extents available for reuse. */
-  MSize narea, nextent;
-  MSize acap, ecap;	/* Capacities: narea <= acap, narea + nextent <= ecap. */
+  MSize narea, acap;	/* narea <= acap. */
 } MCodeCtx;
 
 static pthread_mutex_t mc_reglock = PTHREAD_MUTEX_INITIALIZER;
@@ -372,7 +359,6 @@ static void mc_rehome(jit_State *J, MCodeCtx *c)
   close(c->fd);  /* Never punched or truncated: the other process may use it. */
   c->fd = fd;
   c->fsize = ofs;
-  c->nextent = 0;
   c->sealed = 0;
 }
 
@@ -405,10 +391,9 @@ static MCodeArea *mc_find(jit_State *J, MCodeCtx *c, void *p, size_t sz)
   return NULL;
 }
 
-/* Make every fallible Lua allocation for one more area (context, area and
-** extent slots) before the area is published, so an out-of-memory error
-** unwinds with J unchanged. Each array has its own capacity, so a failure
-** between the two reallocations leaves both sizes correct.
+/* Make every fallible Lua allocation for one more area (context and area
+** slot) before the area is published, so an out-of-memory error unwinds with
+** J unchanged.
 */
 static void mc_reserve(jit_State *J)
 {
@@ -419,12 +404,6 @@ static void mc_reserve(jit_State *J)
       c->acap*sizeof(MCodeArea), n*sizeof(MCodeArea));
     c->acap = n;
   }
-  if (c->narea + c->nextent + 1 > c->ecap) {
-    MSize n = c->ecap ? 2*c->ecap : 8;
-    c->ext = (MCodeExtent *)lj_mem_realloc(J->L, c->ext,
-      c->ecap*sizeof(MCodeExtent), n*sizeof(MCodeExtent));
-    c->ecap = n;
-  }
 }
 
 /* Back an accepted reservation with the memfd, mapped RW (after mc_reserve). */
@@ -432,18 +411,10 @@ static void mc_area_commit(jit_State *J, MCode *p, size_t sz)
 {
   MCodeCtx *c = J->mcctx;
   off_t ofs;
-  MSize i;
   mc_begin(J, c, 1);  /* Held while the new area is writable. */
-  for (i = 0; i < c->nextent; i++)
-    if (c->ext[i].sz == sz) break;
-  if (i < c->nextent) {
-    ofs = c->ext[i].ofs;
-    c->ext[i] = c->ext[--c->nextent];
-  } else {
-    ofs = c->fsize;
-    if (ftruncate(c->fd, ofs + (off_t)sz)) mcode_protfail(J);
-    c->fsize = ofs + (off_t)sz;
-  }
+  ofs = c->fsize;
+  if (ftruncate(c->fd, ofs + (off_t)sz)) mcode_protfail(J);
+  c->fsize = ofs + (off_t)sz;
   if (mmap(p, sz, MCPROT_RW, MAP_SHARED|MAP_FIXED, c->fd, ofs) != (void *)p)
     mcode_protfail(J);
   c->area[c->narea].p = p;
@@ -453,7 +424,11 @@ static void mc_area_commit(jit_State *J, MCode *p, size_t sz)
   c->narea++;
 }
 
-/* Unmap an area; punch and recycle its extent unless the file is sealed. */
+/* Unmap an area. LuaJIT frees areas only all together (lj_mcode_free on a
+** flush), so when the last one is gone the whole file is emptied with one
+** ftruncate (not fallocate, which sandboxes may deny). A file sealed by a
+** fork() is left alone: the other process may still use it.
+*/
 static void mc_area_free(jit_State *J, MCode *p, size_t sz)
 {
   MCodeCtx *c = J->mcctx;
@@ -461,14 +436,9 @@ static void mc_area_free(jit_State *J, MCode *p, size_t sz)
   if (a->rw) { a->rw = 0; mc_end(c); }
   mc_begin(J, c, 0);
   munmap(p, sz);
-  if (!c->sealed) {
-    syscall(SYS_fallocate, c->fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,
-	    a->ofs, (off_t)sz);
-    c->ext[c->nextent].ofs = a->ofs;
-    c->ext[c->nextent].sz = sz;
-    c->nextent++;
-  }
   *a = c->area[--c->narea];
+  if (c->narea == 0 && !c->sealed && ftruncate(c->fd, 0) == 0)
+    c->fsize = 0;
   mc_end(c);
 }
 
@@ -503,7 +473,6 @@ void lj_mcode_freestate(jit_State *J)
   close(c->fd);
   pthread_mutex_destroy(&c->lock);
   lj_mem_free(J2G(J), c->area, c->acap*sizeof(MCodeArea));
-  lj_mem_free(J2G(J), c->ext, c->ecap*sizeof(MCodeExtent));
   lj_mem_free(J2G(J), c, sizeof(MCodeCtx));
   J->mcctx = NULL;
 }

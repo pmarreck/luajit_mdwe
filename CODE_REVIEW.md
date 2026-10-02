@@ -66,6 +66,8 @@ Fix: check reclamation errors and account for unreclaimed backing. When the last
 
 Attribution: introduced by the fork. Upstream releases anonymous code storage with `munmap`.
 
+Resolution (2026-10-01): fixed by simplification. LuaJIT frees areas only all together on a flush, so when the last area is gone an unsealed memfd is truncated to zero with `ftruncate`; per-area `fallocate` punching and the extent free list were removed. Test: `tests/mdwe/lua/flush_storage.lua` (flushes with `sizemcode` 4..64 KiB, then reads the memfd's `st_blocks`) runs in `r_mode` unrestricted and under systemd with `SystemCallFilter=~fallocate`. Before: 139,264 bytes retained under the denial; after: 0 in both.
+
 ### Concurrent embedding and FFI boundary correctness
 
 #### R2. WARNING: Fork ownership detection reads shared state without synchronization

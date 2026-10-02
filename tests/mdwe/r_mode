@@ -89,6 +89,16 @@ for mode in none kernel seccomp; do
 	expect $mode 0 "stress: threads=8 rounds=200 ok" "$bin/embed-stress-mcode2"                 # T7
 done
 expect none 4 "CHANGED" "$bin/embed-fork-mcode2" clone                                         # T5d residual
+# R5 (CODE_REVIEW.md): a flush releases all memfd storage, also when the
+# sandbox denies fallocate (no hole punching).
+expect none 0 "flush_storage: bytes=0" "$luajit" "$lua/flush_storage.lua"
+if [ "$systemd_ok" = 1 ]; then
+	out="$(systemd-run --user --quiet --wait --pipe --collect -E LUA_PATH="$LUA_PATH" \
+		-p SystemCallFilter=~fallocate -p SystemCallErrorNumber=EPERM "$luajit" "$lua/flush_storage.lua" 2>&1)"; rc=$?
+	if [ "$rc" = 0 ] && [[ "$out" == *"flush_storage: bytes=0"* ]]; then ok; else bad "[systemd ~fallocate] flush_storage: rc=$rc out=$out"; fi
+else
+	skip=$((skip+1))
+fi
 # R1 (CODE_REVIEW.md): an allocation failure at any point while compiling,
 # including area and metadata allocation, must leave the host running.
 for mode in none kernel; do

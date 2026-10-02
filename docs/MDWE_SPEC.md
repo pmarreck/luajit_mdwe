@@ -162,12 +162,14 @@ library fork.
   accepted does the allocator pick a file offset and `MAP_FIXED` the memfd RW
   over the reservation. A hint miss therefore unmaps an anonymous
   reservation and never grows or punches the file.
-- File offsets come from a free-extent list, else by appending with
-  `ftruncate`. Freeing an area (`lj_mcode_free`, trace flush) unmaps it and,
-  only if the memfd is **not sealed** and the state lock is held, punches the
-  extent (`FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE`) and returns it to the
-  free list. On a sealed memfd, free only unmaps; the next re-home (§5.5)
-  compacts by copying live areas only. The file never shrinks in place.
+- File offsets are appended with `ftruncate`. LuaJIT frees areas only all
+  together (`lj_mcode_free`, trace flush), so freeing unmaps each area and,
+  once none is left and the memfd is **not sealed**, truncates the file to
+  zero under the state lock. (Revision 2 punched each extent with
+  `fallocate` and kept a free list; code review R5 showed a sandbox denying
+  `fallocate` then retained the storage, so revision 3 truncates instead,
+  which also removed the free list.) On a sealed memfd, free only unmaps;
+  the next re-home (§5.5) copies live areas only into a fresh memfd.
 - Each area's offset is kept in LuaJIT-owned memory outside the area (a side
   table in the per-state mcode context), not only in the `MCLink` header.
 
